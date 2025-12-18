@@ -35,6 +35,7 @@ class ModelResult:
     tokens: int
     tokens_per_q: float
     passes: int
+    artifact_stats: list[dict[str, Any]]
 
 
 class AdapterOutput(BaseModel):
@@ -57,8 +58,6 @@ class AdapterOutput(BaseModel):
 
     @model_validator(mode="after")
     def ensure_value(self):
-        if self.value is None:
-            raise ValueError("value is required")
         return self
 
 
@@ -73,6 +72,8 @@ def _valid_support_ids(row: dict[str, Any]) -> set[str]:
 def validate_adapter_output(
     *, row: dict[str, Any], raw: dict[str, Any], protocol: str, max_support_k: int
 ) -> dict[str, Any]:
+    if "value" not in raw:
+        raise ValueError("Adapter output missing 'value'")
     filtered = {k: raw.get(k) for k in ("value", "support_id", "support_ids")}
     try:
         parsed = AdapterOutput.model_validate(filtered)
@@ -100,6 +101,7 @@ def run_adapter(
 ) -> ModelResult:
     preds: list[dict[str, Any]] = []
     tokens = 0
+    artifact_stats: list[dict[str, Any]] = []
     # Group by episode to allow one-time artifact construction.
     by_episode: dict[str, list[dict[str, Any]]] = {}
     for row in data_rows:
@@ -107,10 +109,11 @@ def run_adapter(
 
     for episode_id, rows in by_episode.items():
         doc = rows[0]["document"]
-        tokens += len(doc.split())
+        tokens += len(doc.split())  # one full read of the document for build phase
         artifact = None
         if hasattr(adapter, "build_artifact"):
             artifact = adapter.build_artifact(document=doc, episode_id=episode_id, protocol=protocol)
+            artifact_stats.append(_artifact_report(artifact=artifact, episode_id=episode_id, source_doc=doc))
 
         for row in rows:
             row_for_adapter = {**row}
@@ -120,7 +123,7 @@ def run_adapter(
                 row_for_adapter["artifact"] = artifact
 
             source_text = artifact or (row["document"] if protocol == "open_book" else row["book"])
-            tokens += len(source_text.split())
+            tokens += len(source_text.split())  # one pass to answer this query
 
             out = adapter.predict(row_for_adapter, protocol=protocol) or {}
             validated = validate_adapter_output(row=row, raw=out, protocol=protocol, max_support_k=max_support_k)
@@ -139,4 +142,34 @@ def run_adapter(
         tokens=tokens,
         tokens_per_q=(tokens / len(data_rows)) if data_rows else 0.0,
         passes=1,
+        artifact_stats=artifact_stats,
     )
+
+
+def _artifact_report(*, artifact: str | None, episode_id: str, source_doc: str) -> dict[str, Any]:
+    if artifact is None:
+        return {"episode_id": episode_id, "has_artifact": False}
+
+    tokens = len(artifact.split())
+    ledger = parse_book_ledger(artifact)
+    # very rough glossary size (lines under Glossary)
+    glossary_size = 0
+    in_glossary = False
+    for line in artifact.splitlines():
+        if line.strip() == "## Glossary (Tags)":
+            in_glossary = True
+            continue
+        if in_glossary and line.startswith("## "):
+            break
+        if in_glossary and line.startswith("- "):
+            glossary_size += 1
+
+    leak = "- [U" in artifact and "UPDATE step=" in artifact  # doc-style lines leaking into artifact
+    return {
+        "episode_id": episode_id,
+        "has_artifact": True,
+        "tokens": tokens,
+        "ledger_entries": len(ledger),
+        "glossary_entries": glossary_size,
+        "leak_check": not leak,
+    }

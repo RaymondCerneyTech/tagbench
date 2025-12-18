@@ -151,6 +151,7 @@ def _cmd_model(ns: argparse.Namespace) -> int:
                 "instruction_gap": res.instruction_gap,
             },
             "efficiency": eff,
+            "artifact_stats": res_model.artifact_stats,
         }
         Path(ns.results_json).write_text(json.dumps(results_payload, indent=2), encoding="utf-8")
     return 0
@@ -197,6 +198,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
                 "instruction_gap": res.instruction_gap,
             },
             "efficiency": eff,
+            "artifact_stats": [],
         }
         results_payloads.append(payload)
 
@@ -208,6 +210,82 @@ def _cmd_run(ns: argparse.Namespace) -> int:
 
     if ns.results_json:
         Path(ns.results_json).write_text(json.dumps(results_payloads, indent=2), encoding="utf-8")
+    return 0
+
+
+def _cmd_sweep(ns: argparse.Namespace) -> int:
+    results: list[dict[str, Any]] = []
+    state_modes = ns.state_modes.split(",")
+    profiles = ns.distractor_profiles.split(",")
+    out_root: Path = ns.out
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    for seed in range(ns.seeds):
+        for mode in state_modes:
+            for profile in profiles:
+                cfg = EpisodeConfig(
+                    steps=ns.steps,
+                    keys=ns.keys,
+                    queries=ns.queries,
+                    chapters=ns.chapters,
+                    distractor_rate=ns.distractor_rate,
+                    clear_rate=ns.clear_rate,
+                    distractor_profile=profile,
+                    state_mode=mode,
+                    twins=True,
+                )
+                data = generate_dataset(seed=seed, episodes=ns.episodes, cfg=cfg)
+                run_dir = out_root / f"seed{seed}-mode{mode}-prof{profile}"
+                run_dir.mkdir(parents=True, exist_ok=True)
+                data_path = run_dir / "data.jsonl"
+                preds_path = run_dir / "preds.jsonl"
+                results_path = run_dir / "results.json"
+                write_jsonl(data_path, data)
+
+                preds = list(iter_predictions(data, baseline="ledger", protocol="closed_book"))
+                write_jsonl(preds_path, preds)
+                res = grade_rows(
+                    data_rows=data,
+                    pred_by_id=_pred_index(preds),
+                    citations="auto",
+                    support_metric="f1",
+                    max_support_k=ns.max_support_k,
+                    entailment_check=True,
+                )
+                tokens = sum(_estimate_tokens(r["book"]) for r in data)
+                eff = {
+                    "tokens": tokens,
+                    "tokens_per_q": tokens / len(data) if data else 0.0,
+                    "passes": 1,
+                    "wall": 0.0,
+                }
+                payload = {
+                    "adapter_schema_version": "1.0",
+                    "baseline": "ledger",
+                    "protocol": "closed_book",
+                    "seed": seed,
+                    "state_mode": mode,
+                    "distractor_profile": profile,
+                    "metrics": {
+                        "value_acc": res.value_acc,
+                        "exact_acc": res.exact_acc,
+                        "cite_f1": res.citation_f1,
+                        "cite_p": res.citation_precision,
+                        "cite_r": res.citation_recall,
+                        "entailment": res.entailment_rate,
+                        "twin_consistency": res.twin_consistency,
+                        "twin_flip_rate": res.twin_flip_rate,
+                        "instruction_acc": res.instruction_acc,
+                        "instruction_gap": res.instruction_gap,
+                    },
+                    "efficiency": eff,
+                    "artifact_stats": [],
+                }
+                results.append(payload)
+                results_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    if ns.results_json:
+        Path(ns.results_json).write_text(json.dumps(results, indent=2), encoding="utf-8")
     return 0
 
 
@@ -305,6 +383,22 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--out", type=Path, default=None)
     m.add_argument("--results-json", type=Path, default=None, help="Optional machine-readable metrics output (JSON).")
     m.set_defaults(func=_cmd_model)
+
+    s = sub.add_parser("sweep", help="Run a small sweep over seeds/state_modes/distractors.")
+    s.add_argument("--out", required=True, type=Path, help="Output directory for sweep runs.")
+    s.add_argument("--seeds", type=int, default=5, help="Number of seeds (0..seeds-1).")
+    s.add_argument("--episodes", type=int, default=2)
+    s.add_argument("--steps", type=int, default=150)
+    s.add_argument("--keys", type=int, default=10)
+    s.add_argument("--queries", type=int, default=12)
+    s.add_argument("--chapters", type=int, default=6)
+    s.add_argument("--distractor-rate", type=float, default=0.5)
+    s.add_argument("--clear-rate", type=float, default=0.08)
+    s.add_argument("--state-modes", type=str, default="kv,counter,set,relational")
+    s.add_argument("--distractor-profiles", type=str, default="standard,adversarial,instruction")
+    s.add_argument("--max-support-k", type=int, default=3)
+    s.add_argument("--results-json", type=Path, default=None, help="If set, write combined results JSON here.")
+    s.set_defaults(func=_cmd_sweep)
 
     return p
 

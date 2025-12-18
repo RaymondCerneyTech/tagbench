@@ -101,6 +101,7 @@ Implement a tiny adapter (module with `create_adapter()` returning an object tha
 
 Reference adapter (wraps the ledger baseline): `tagbench.adapters.ledger_adapter:create_adapter`.
 Two-phase adapter example (build book once, answer many): `tagbench.adapters.log_to_book_adapter:create_adapter` implements `build_artifact(document, episode_id, protocol)` then answers closed-book.
+Closed-book Llama example (uses `llama-cpp-python`, set `TAGBENCH_MODEL` to a GGUF path): `tagbench.adapters.llama_cpp_adapter:create_adapter`.
 
 Adapter contract (hard-validated):
 
@@ -118,6 +119,8 @@ tagbench model --data .\data\tagbench.jsonl --adapter tagbench.adapters.ledger_a
 Both `tagbench run` and `tagbench model` can emit machine-readable metrics via `--results-json` (JSON object or array; overwrites the file each run; intended for plotting accuracy vs tokens/passes). Closed-book with `--protocol both` writes an array.
 
 Practical runs: create a folder per run, sweep multiple seeds/state_modes/distractor_profiles, and keep one `results.json` per run to compare stability (long-context behavior is seed/ordering-sensitive).
+
+Sweeps: `tagbench sweep --out runs --seeds 5 --state-modes kv,counter,set,relational --distractor-profiles standard,adversarial,instruction` (writes one subfolder per combo with data/preds/results).
 
 ## Anti-cheat / robustness notes
 

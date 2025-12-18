@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from tagbench.baselines import predict_ledger_row
-from tagbench.book import render_book
+from tagbench.book import LedgerEntry, render_book
 
 
 class LogToBookAdapter:
@@ -15,19 +15,14 @@ class LogToBookAdapter:
         self.artifacts: dict[str, str] = {}
 
     def build_artifact(self, *, document: str, episode_id: str, protocol: str = "open_book") -> str:
-        # Reuse existing renderer to make a ledger-only book.
         from tagbench.baselines import parse_updates
 
         updates = parse_updates(document)
-        book = render_book(title=f"TagBench Rebuilt {episode_id}", chapters=[], glossary={}, ledger=[])
-        # Hack: append ledger from updates (render_book expects LedgerEntry objects, but this is illustrative).
-        ledger_lines = ["## State Ledger"]
-        for u in updates:
-            if u["op"] == "SET":
-                ledger_lines.append(f"- [{u['uid']}] step={u['step']} SET {u['key']} = {u['value']}")
-            else:
-                ledger_lines.append(f"- [{u['uid']}] step={u['step']} CLEAR {u['key']}")
-        artifact = "\n".join([book, "\n".join(ledger_lines)])
+        ledger = [
+            LedgerEntry(uid=u["uid"], step=u["step"], op=u["op"], key=u["key"], value=u["value"])
+            for u in updates
+        ]
+        artifact = render_book(title=f"TagBench Rebuilt {episode_id}", chapters=[], glossary={}, ledger=ledger)
         self.artifacts[episode_id] = artifact
         return artifact
 
