@@ -1,5 +1,7 @@
 # tagbench
 
+tagbench is a benchmark + harness for long-context state tracking. It generates synthetic “episode logs” with evolving state (kv/counter/set/relational), distractors (including instruction injection), and queries that require answering from the latest state update. It evaluates open-book vs closed-book protocols, enforces citation support IDs with capped-k + F1, checks entailment-from-citations, and uses counterfactual twin episodes to detect shortcut heuristics. It also reports efficiency (tokens/query, passes, wall time) so you can measure capability per compute.
+
 `tagbench` is a small benchmark + reference codebase for testing whether an LLM can track evolving state across long documents by reading its own “book” artifacts:
 
 - **Chapters**: narrative text (contains distractors and stale summaries)
@@ -79,6 +81,7 @@ Metrics:
 - `exact_acc`: value match + (if required) support includes gold + entailment-from-citations
 - `twin_consistency`: counterfactual twin agreement/disagreement rate (anti-shortcut)
 - `twin_flip_rate`: twin pairs where the answer flips when the decisive UPDATE flips (higher is better)
+- `instr_acc` / `instr_gap`: accuracy on questions with instruction-injection distractors, and the drop vs. clean questions
 - Efficiency curve (printed by `tagbench run`): tokens read, tokens/query, passes over doc, wall-clock seconds.
 
 ## Grade model outputs
@@ -97,12 +100,14 @@ tagbench grade --data .\data\tagbench.jsonl --pred .\preds.jsonl
 Implement a tiny adapter (module with `create_adapter()` returning an object that has `.predict(row, protocol="...") -> {"value": ..., "support_ids": [...]}`).
 
 Reference adapter (wraps the ledger baseline): `tagbench.adapters.ledger_adapter:create_adapter`.
+Two-phase adapter example (build book once, answer many): `tagbench.adapters.log_to_book_adapter:create_adapter` implements `build_artifact(document, episode_id, protocol)` then answers closed-book.
 
 Adapter contract (hard-validated):
 
 - `value` required.
 - `support_ids` must be a list (max 3 by default) and must reference UPDATE IDs in the episode (closed-book uses the book ledger).
 - Extra fields are rejected; missing `value` fails fast.
+- `adapter_schema_version=1.0` is attached to metrics outputs for compatibility.
 
 Run your adapter:
 
@@ -112,6 +117,8 @@ tagbench model --data .\data\tagbench.jsonl --adapter tagbench.adapters.ledger_a
 
 Both `tagbench run` and `tagbench model` can emit machine-readable metrics via `--results-json` (JSON object or array; overwrites the file each run; intended for plotting accuracy vs tokens/passes). Closed-book with `--protocol both` writes an array.
 
+Practical runs: create a folder per run, sweep multiple seeds/state_modes/distractor_profiles, and keep one `results.json` per run to compare stability (long-context behavior is seed/ordering-sensitive).
+
 ## Anti-cheat / robustness notes
 
 - The episode log contains **UPDATE** lines (authoritative) and **DISTRACTOR** lines (untrusted).
@@ -120,6 +127,7 @@ Both `tagbench run` and `tagbench model` can emit machine-readable metrics via `
 - UPDATE IDs are non-monotonic (hash-like) to prevent “pick the max ID” shortcuts; ordering comes from the logged `step`.
 - Closed-book protocol feeds only the derived book artifact (no episode log).
 - `--distractor-profile instruction` (default) injects spec-violating instructions; `adversarial` adds stale-echo distractors (late repeats of old values).
+- Instruction-injection resistance is measured via `instr_acc`/`instr_gap`; answers derived from instruction lines are not authoritative.
 
 ### Efficiency snapshot (ledger baseline, 1 episode, steps=150, queries=12, distractor_profile=instruction)
 

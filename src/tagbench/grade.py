@@ -15,6 +15,9 @@ class GradeResult:
     twin_consistency: float | None
     twin_flip_rate: float | None
     entailment_rate: float | None
+    instruction_acc: float | None
+    clean_acc: float | None
+    instruction_gap: float | None
 
 
 def _norm_value(v: Any) -> str | None:
@@ -145,6 +148,10 @@ def grade_rows(
     entail_total = 0
     entail_ok = 0
     exact_ok = 0
+    instr_total = 0
+    instr_ok = 0
+    clean_total = 0
+    clean_ok = 0
 
     for row in data_rows:
         rid = row["id"]
@@ -206,6 +213,14 @@ def grade_rows(
 
         if is_value_ok and (is_cite_ok if require else True) and (is_entails if require else True):
             exact_ok += 1
+            if row["meta"].get("has_instruction"):
+                instr_ok += 1
+            else:
+                clean_ok += 1
+        if row["meta"].get("has_instruction"):
+            instr_total += 1
+        else:
+            clean_total += 1
 
     return GradeResult(
         n=n,
@@ -217,4 +232,7 @@ def grade_rows(
         twin_consistency=_twin_consistency(data_rows, pred_by_id),
         twin_flip_rate=_twin_flip_rate(data_rows, pred_by_id),
         entailment_rate=(entail_ok / entail_total) if entail_total else None,
+        instruction_acc=(instr_ok / instr_total) if instr_total else None,
+        clean_acc=(clean_ok / clean_total) if clean_total else None,
+        instruction_gap=((clean_ok / clean_total) - (instr_ok / instr_total)) if instr_total and clean_total else None,
     )

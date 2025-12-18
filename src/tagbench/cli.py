@@ -32,6 +32,10 @@ def _print_report(res, prefix: str = "", eff: dict[str, Any] | None = None) -> N
         print(f" twin_consistency={res.twin_consistency:.3f}", end="")
     if res.twin_flip_rate is not None:
         print(f" twin_flip_rate={res.twin_flip_rate:.3f}", end="")
+    if res.instruction_acc is not None:
+        print(f" instr_acc={res.instruction_acc:.3f}", end="")
+    if res.instruction_gap is not None:
+        print(f" instr_gap={res.instruction_gap:.3f}", end="")
     if eff:
         print(
             f" tokens={eff['tokens']} (~{eff['tokens_per_q']:.1f}/q) passes={eff['passes']} wall_s={eff['wall']:.2f}",
@@ -143,6 +147,8 @@ def _cmd_model(ns: argparse.Namespace) -> int:
                 "entailment": res.entailment_rate,
                 "twin_consistency": res.twin_consistency,
                 "twin_flip_rate": res.twin_flip_rate,
+                "instruction_acc": res.instruction_acc,
+                "instruction_gap": res.instruction_gap,
             },
             "efficiency": eff,
         }
@@ -187,10 +193,18 @@ def _cmd_run(ns: argparse.Namespace) -> int:
                 "entailment": res.entailment_rate,
                 "twin_consistency": res.twin_consistency,
                 "twin_flip_rate": res.twin_flip_rate,
+                "instruction_acc": res.instruction_acc,
+                "instruction_gap": res.instruction_gap,
             },
             "efficiency": eff,
         }
         results_payloads.append(payload)
+
+        if ns.out:
+            out_path = ns.out
+            if ns.protocol == "both":
+                out_path = Path(str(ns.out).replace(".jsonl", f".{protocol}.jsonl"))
+            write_jsonl(out_path, preds)
 
     if ns.results_json:
         Path(ns.results_json).write_text(json.dumps(results_payloads, indent=2), encoding="utf-8")

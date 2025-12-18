@@ -16,4 +16,8 @@ These rules apply to the entire repository.
 
 ## Docs
 - Update `README.md` whenever behavior, CLI, formats, or defaults change.
+- When README changes, ensure this `AGENTS.md` stays accurate (house rules + current contracts).
 
+## Current contracts (keep in sync)
+- Adapter schema version: `1.0` (adapter outputs must include `value`, `support_ids` list; extra fields rejected).
+- Results output: `--results-json` writes JSON (object or array); `--out` writes predictions JSONL.

@@ -11,6 +11,8 @@ from tagbench.baselines import parse_book_ledger, parse_updates
 
 class ModelAdapter(Protocol):
     def predict(self, row: dict[str, Any], *, protocol: str = "open_book") -> dict[str, Any]: ...
+    # Optional: build an artifact from the episode log once per episode_id.
+    def build_artifact(self, *, document: str, episode_id: str, protocol: str = "open_book") -> str: ...
 
 
 def load_adapter(spec: str) -> ModelAdapter:
@@ -98,22 +100,39 @@ def run_adapter(
 ) -> ModelResult:
     preds: list[dict[str, Any]] = []
     tokens = 0
+    # Group by episode to allow one-time artifact construction.
+    by_episode: dict[str, list[dict[str, Any]]] = {}
     for row in data_rows:
-        doc = row["document"] if protocol == "open_book" else row["book"]
+        by_episode.setdefault(row["episode_id"], []).append(row)
+
+    for episode_id, rows in by_episode.items():
+        doc = rows[0]["document"]
         tokens += len(doc.split())
-        # Enforce closed-book: strip document before calling adapter.
-        row_for_adapter = row if protocol == "open_book" else {**row, "document": None}
-        out = adapter.predict(row_for_adapter, protocol=protocol) or {}
-        validated = validate_adapter_output(row=row, raw=out, protocol=protocol, max_support_k=max_support_k)
-        pid = row["id"]
-        preds.append(
-            {
-                "id": pid,
-                "value": validated["value"],
-                "support_id": None,
-                "support_ids": validated["support_ids"],
-            }
-        )
+        artifact = None
+        if hasattr(adapter, "build_artifact"):
+            artifact = adapter.build_artifact(document=doc, episode_id=episode_id, protocol=protocol)
+
+        for row in rows:
+            row_for_adapter = {**row}
+            if protocol == "closed_book":
+                row_for_adapter["document"] = None
+            if artifact is not None:
+                row_for_adapter["artifact"] = artifact
+
+            source_text = artifact or (row["document"] if protocol == "open_book" else row["book"])
+            tokens += len(source_text.split())
+
+            out = adapter.predict(row_for_adapter, protocol=protocol) or {}
+            validated = validate_adapter_output(row=row, raw=out, protocol=protocol, max_support_k=max_support_k)
+            pid = row["id"]
+            preds.append(
+                {
+                    "id": pid,
+                    "value": validated["value"],
+                    "support_id": None,
+                    "support_ids": validated["support_ids"],
+                }
+            )
 
     return ModelResult(
         predictions=preds,
