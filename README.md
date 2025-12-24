@@ -260,6 +260,14 @@ When retrieval stats and predictions are available, summary output also reports:
 - `accuracy_when_gold_present`: value accuracy conditioned on the gold line being present.
 - `selection_rate`: fraction of gold-present rows where the prediction cites the gold line.
 
+Query-sandwich A/B (same_key, k=4, s3q16):
+
+- sandwich off: gold_first 0.0, gold_middle 0.0208, gold_last 0.5625, shuffle 0.4583
+- sandwich on: gold_first 0.0, gold_middle 0.0, gold_last 0.5625, shuffle 0.1875
+
+Selection rate tracks accuracy_when_gold_present in these runs; sandwich does not improve
+selection under ambiguity and can make shuffle worse.
+
 Reproduce the k=4 order-bias run:
 
 ```powershell
