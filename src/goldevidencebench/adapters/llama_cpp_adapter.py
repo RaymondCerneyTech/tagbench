@@ -13,6 +13,7 @@ except ImportError as exc:  # pragma: no cover - optional dependency
 
 from goldevidencebench.adapters.llama_prompt import build_prompt, extract_ledger, truncate_tokens
 from goldevidencebench.baselines import parse_book_ledger
+from goldevidencebench.util import get_env
 
 try:  # optional low-level perf API
     from llama_cpp import llama_cpp as llama_cpp_lib
@@ -50,7 +51,7 @@ class LlamaCppAdapter:
     """
     Closed-book adapter that answers using a provided book artifact.
     Model path is taken from:
-    - env TAGBENCH_MODEL
+    - env GOLDEVIDENCEBENCH_MODEL (or legacy TAGBENCH_MODEL)
     - or constructor argument model_path
     """
 
@@ -62,12 +63,12 @@ class LlamaCppAdapter:
         max_book_tokens: int = 1600,
         query_sandwich: bool = False,
     ) -> None:
-        model_path = model_path or os.getenv("TAGBENCH_MODEL")
+        model_path = model_path or get_env("MODEL")
         if not model_path:
-            raise ValueError("Set TAGBENCH_MODEL to a GGUF model path or pass model_path.")
+            raise ValueError("Set GOLDEVIDENCEBENCH_MODEL (or legacy TAGBENCH_MODEL) to a GGUF model path or pass model_path.")
         if not Path(model_path).exists():
             raise FileNotFoundError(model_path)
-        require_citations_env = os.getenv("TAGBENCH_REQUIRE_CITATIONS", "1").strip().lower()
+        require_citations_env = (get_env("REQUIRE_CITATIONS", "1") or "1").strip().lower()
         self.require_citations = require_citations_env not in {"0", "false", "no"}
         self.llm = Llama(model_path=model_path, n_ctx=n_ctx, n_threads=n_threads)
         self.max_book_tokens = max_book_tokens

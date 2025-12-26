@@ -8,6 +8,7 @@ from typing import Any, Iterable
 from goldevidencebench.baselines import parse_updates
 from goldevidencebench.book import LedgerEntry, render_book
 from goldevidencebench.adapters.llama_prompt import truncate_tokens
+from goldevidencebench.util import get_env
 
 try:
     from llama_cpp import LlamaGrammar
@@ -125,14 +126,14 @@ class StreamingLlamaCppAdapter:
         n_threads: int | None = None,
         max_book_tokens: int = 1600,
     ) -> None:
-        env_chunk = os.getenv("TAGBENCH_STREAM_CHUNK_TOKENS")
+        env_chunk = get_env("STREAM_CHUNK_TOKENS")
         if env_chunk:
             try:
                 chunk_tokens = int(env_chunk)
             except ValueError:
                 pass
         if stream_mode is None:
-            stream_mode = os.getenv("TAGBENCH_STREAM_MODE", "llm").strip().lower()
+            stream_mode = get_env("STREAM_MODE", "llm").strip().lower()
         self.cfg = StreamingConfig(chunk_tokens=chunk_tokens)
         from goldevidencebench.adapters.llama_cpp_adapter import LlamaCppAdapter
 

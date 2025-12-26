@@ -8,6 +8,62 @@ GoldEvidenceBench is a small benchmark + reference codebase for testing whether 
 - **Glossary (tags)**: a lightweight key reference
 - **State ledger**: the authoritative state updates (with support IDs)
 
+## TL;DR (layman summary)
+
+GoldEvidenceBench shows whether your AI system can reliably pick the right piece of evidence when several similar candidates exist. It builds long, noisy logs with changing facts, then checks if the model chooses the most recent, correct update and cites it. The key benefit is that it separates "the evidence was available" from "the model chose the right evidence," so you can improve the exact part of your system that is failing (retrieval vs selection vs formatting).
+
+## Headline results (summary)
+
+Selection under ambiguity is the bottleneck. Simple deterministic selection outperforms the LLM as candidate lists grow.
+
+| Finding | Evidence |
+| --- | --- |
+| Ordering bias is severe | gold_last ? gold_middle/shuffle ? gold_first |
+| Query sandwich did not help | selection_rate did not improve; shuffle got worse |
+| Pick-then-answer did not help | selection_rate stayed flat or dropped |
+| Deterministic reranker helps | rerank latest_step roughly doubles selection at k=2/4/8 |
+
+## Reproduce the headline results (minimal commands)
+
+1) Order bias (k=4, s3q16):
+
+```powershell
+$env:GOLDEVIDENCEBENCH_RETRIEVAL_K = "4"
+$env:GOLDEVIDENCEBENCH_RETRIEVAL_ORDER_SEED = "0"
+foreach ($order in @("gold_first","gold_middle","gold_last","shuffle")) {
+  $env:GOLDEVIDENCEBENCH_RETRIEVAL_ORDER = $order
+  $outDir = "runs\ambig_${order}_k4_s3q16"
+  goldevidencebench sweep --out $outDir --seeds 3 --episodes 1 --steps 240 --queries 16 `
+    --state-modes kv --distractor-profiles standard `
+    --adapter goldevidencebench.adapters.retrieval_llama_cpp_adapter:create_adapter --no-derived-queries `
+    --no-twins --require-citations --results-json "$outDir\combined.json" `
+    --max-book-tokens 400 --distractor-rate 0.7 --clear-rate 0.01 --tail-distractor-steps 80
+  python .\scripts\summarize_results.py --in "$outDir\combined.json" --out-json "$outDir\summary.json"
+}
+```
+
+2) Reranker k-curve (same_key, shuffle, s5q24):
+
+```powershell
+$env:GOLDEVIDENCEBENCH_RETRIEVAL_WRONG_TYPE = "same_key"
+$env:GOLDEVIDENCEBENCH_RETRIEVAL_ORDER = "shuffle"
+$env:GOLDEVIDENCEBENCH_RETRIEVAL_ORDER_SEED = "0"
+$ks = @("2","4","8")
+foreach ($rerank in @("none","latest_step")) {
+  $env:GOLDEVIDENCEBENCH_RETRIEVAL_RERANK = $rerank
+  foreach ($k in $ks) {
+    $env:GOLDEVIDENCEBENCH_RETRIEVAL_K = $k
+    $outDir = "runs\ab_rerank_${rerank}_k${k}_same_shuffle_s5q24"
+    goldevidencebench sweep --out $outDir --seeds 5 --episodes 1 --steps 200 --queries 24 `
+      --state-modes kv --distractor-profiles standard `
+      --adapter goldevidencebench.adapters.retrieval_llama_cpp_adapter:create_adapter --no-derived-queries `
+      --no-twins --require-citations --results-json "$outDir\combined.json" `
+      --max-book-tokens 400 --distractor-rate 0.7 --clear-rate 0.01 --tail-distractor-steps 80
+    python .\scripts\summarize_results.py --in "$outDir\combined.json" --out-json "$outDir\summary.json"
+  }
+}
+```
+
 The benchmark generates synthetic episodes (updates + distractors + queries), including derived-invariant queries that require computation over the current state, grades model answers (optionally requiring citations/support IDs), and includes baselines (naive scan vs ledger-based reader).
 
 ## Defaults (chosen here)
@@ -204,30 +260,30 @@ Implement a tiny adapter (module with `create_adapter()` returning an object tha
 
 Reference adapter (wraps the ledger baseline): `goldevidencebench.adapters.ledger_adapter:create_adapter`.
 Two-phase adapter example (build book once, answer many): `goldevidencebench.adapters.log_to_book_adapter:create_adapter` implements `build_artifact(document, episode_id, protocol)` then answers closed-book.
-Closed-book Llama example (uses `llama-cpp-python`, set `TAGBENCH_MODEL` to a GGUF path): `goldevidencebench.adapters.llama_cpp_adapter:create_adapter`.
+Closed-book Llama example (uses `llama-cpp-python`, set `GOLDEVIDENCEBENCH_MODEL` to a GGUF path): `goldevidencebench.adapters.llama_cpp_adapter:create_adapter`.
 The Llama adapter extracts the `## State Ledger` section and keeps the most recent ledger tokens to fit context.
 Streaming state-builder (chunked log -> compact ledger, then Llama answers): `goldevidencebench.adapters.streaming_llama_cpp_adapter:create_adapter`.
-Set `TAGBENCH_STREAM_CHUNK_TOKENS` (default 512) to control chunk size. Set `TAGBENCH_STREAM_MODE=llm`
-(default) to let the model extract updates per chunk, or `TAGBENCH_STREAM_MODE=parse` for a deterministic parser.
+Set `GOLDEVIDENCEBENCH_STREAM_CHUNK_TOKENS` (default 512) to control chunk size. Set `GOLDEVIDENCEBENCH_STREAM_MODE=llm`
+(default) to let the model extract updates per chunk, or `GOLDEVIDENCEBENCH_STREAM_MODE=parse` for a deterministic parser.
 Teacher book-builder (LLM builds artifacts, answerer stays fixed): `goldevidencebench.adapters.llm_book_builder_adapter:create_adapter`.
-Set `TAGBENCH_BUILDER_MODEL` to use a stronger model for artifact construction (defaults to `TAGBENCH_MODEL`).
-Set `TAGBENCH_BUILDER_CHUNK_TOKENS` to control builder chunk size.
-Set `TAGBENCH_BUILDER_MODE` to `heuristic`, `llm_fullscan` (default), or `llm_perkey`.
-Set `TAGBENCH_BUILDER_PER_KEY_LLM=0` to disable per-key LLM calls (deterministic fallback).
+Set `GOLDEVIDENCEBENCH_BUILDER_MODEL` to use a stronger model for artifact construction (defaults to `GOLDEVIDENCEBENCH_MODEL`).
+Set `GOLDEVIDENCEBENCH_BUILDER_CHUNK_TOKENS` to control builder chunk size.
+Set `GOLDEVIDENCEBENCH_BUILDER_MODE` to `heuristic`, `llm_fullscan` (default), or `llm_perkey`.
+Set `GOLDEVIDENCEBENCH_BUILDER_PER_KEY_LLM=0` to disable per-key LLM calls (deterministic fallback).
 Retrieval-first answerer (use only the latest ledger entry for the key): `goldevidencebench.adapters.retrieval_llama_cpp_adapter:create_adapter`.
-Env var names keep the `TAGBENCH_` prefix for backward compatibility.
-Set `TAGBENCH_RETRIEVAL_K` to include top-k latest entries for the key (default 1). Set
-`TAGBENCH_RETRIEVAL_WRONG_TYPE` to `none`, `same_key`, or `other_key` to inject a wrong line for robustness
-testing. Use `TAGBENCH_RETRIEVAL_INCLUDE_CLEAR=0` to skip CLEAR entries.
-Use `TAGBENCH_RETRIEVAL_DROP_PROB` (0-1) to probabilistically drop the correct line, and
-`TAGBENCH_RETRIEVAL_DROP_SEED` to make the drop deterministic by row id.
-Use `TAGBENCH_RETRIEVAL_ORDER=shuffle|gold_first|gold_middle|gold_last` (and optional
-`TAGBENCH_RETRIEVAL_ORDER_SEED`) to control ordering and test positional bias under ambiguity.
-Set `TAGBENCH_RETRIEVAL_QUERY_SANDWICH=1` to repeat the question before and after the
+Env var names use the `GOLDEVIDENCEBENCH_` prefix; legacy `TAGBENCH_` variables are still accepted.
+Set `GOLDEVIDENCEBENCH_RETRIEVAL_K` to include top-k latest entries for the key (default 1). Set
+`GOLDEVIDENCEBENCH_RETRIEVAL_WRONG_TYPE` to `none`, `same_key`, or `other_key` to inject a wrong line for robustness
+testing. Use `GOLDEVIDENCEBENCH_RETRIEVAL_INCLUDE_CLEAR=0` to skip CLEAR entries.
+Use `GOLDEVIDENCEBENCH_RETRIEVAL_DROP_PROB` (0-1) to probabilistically drop the correct line, and
+`GOLDEVIDENCEBENCH_RETRIEVAL_DROP_SEED` to make the drop deterministic by row id.
+Use `GOLDEVIDENCEBENCH_RETRIEVAL_ORDER=shuffle|gold_first|gold_middle|gold_last` (and optional
+`GOLDEVIDENCEBENCH_RETRIEVAL_ORDER_SEED`) to control ordering and test positional bias under ambiguity.
+Set `GOLDEVIDENCEBENCH_RETRIEVAL_QUERY_SANDWICH=1` to repeat the question before and after the
 candidate ledger lines (query sandwich mitigation).
-Set `TAGBENCH_RETRIEVAL_PICK_THEN_ANSWER=1` to force a two-step flow: pick a support_id
+Set `GOLDEVIDENCEBENCH_RETRIEVAL_PICK_THEN_ANSWER=1` to force a two-step flow: pick a support_id
 first, then answer using only that line.
-Set `TAGBENCH_RETRIEVAL_RERANK=latest_step` to deterministically choose the newest candidate
+Set `GOLDEVIDENCEBENCH_RETRIEVAL_RERANK=latest_step` to deterministically choose the newest candidate
 before answering (non-LLM selector baseline).
 
 Retrieval order bias (example, k=4, s3q16, kv/standard, gold always present):
@@ -311,10 +367,10 @@ Decomposition line per run is `gold_present_rate -> selection_rate -> accuracy_w
 Reproduce the k=4 order-bias run:
 
 ```powershell
-$env:TAGBENCH_RETRIEVAL_K = "4"
-$env:TAGBENCH_RETRIEVAL_ORDER_SEED = "0"
+$env:GOLDEVIDENCEBENCH_RETRIEVAL_K = "4"
+$env:GOLDEVIDENCEBENCH_RETRIEVAL_ORDER_SEED = "0"
 foreach ($order in @("gold_first","gold_middle","gold_last","shuffle")) {
-  $env:TAGBENCH_RETRIEVAL_ORDER = $order
+  $env:GOLDEVIDENCEBENCH_RETRIEVAL_ORDER = $order
   $outDir = "runs\ambig_${order}_k4_s3q16"
   goldevidencebench sweep --out $outDir --seeds 3 --episodes 1 --steps 240 --queries 16 `
     --state-modes kv --distractor-profiles standard `
@@ -328,7 +384,7 @@ foreach ($order in @("gold_first","gold_middle","gold_last","shuffle")) {
 Query-sandwich variant (toggle only; same run otherwise):
 
 ```powershell
-$env:TAGBENCH_RETRIEVAL_QUERY_SANDWICH = "1"
+$env:GOLDEVIDENCEBENCH_RETRIEVAL_QUERY_SANDWICH = "1"
 goldevidencebench sweep --out runs --seeds 1 --episodes 1 --steps 120 --queries 8 `
   --state-modes kv --distractor-profiles standard `
   --adapter goldevidencebench.adapters.retrieval_llama_cpp_adapter:create_adapter --no-derived-queries `
@@ -352,7 +408,7 @@ Adapter tuning:
 
 - `goldevidencebench model --max-book-tokens 1200` (passed to adapters that expose `max_book_tokens`).
 - Llama adapter logs prompt token counts to stderr for debugging.
-- For the llama-cpp adapter, set `TAGBENCH_REQUIRE_CITATIONS=0` to force `support_ids` to be an empty list (value-only mode).
+- For the llama-cpp adapter, set `GOLDEVIDENCEBENCH_REQUIRE_CITATIONS=0` to force `support_ids` to be an empty list (value-only mode).
 - Llama-cpp adapter uses grammar-constrained decoding when available: citations-on runs force exactly one support ID, citations-off runs force an empty list.
 - When citations are required, the adapter deterministically selects the latest ledger ID for the tag that matches the predicted value, falling back to the latest ledger entry for the tag.
 

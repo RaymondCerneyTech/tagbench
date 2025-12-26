@@ -12,7 +12,7 @@ from goldevidencebench.baselines import iter_predictions, parse_model_json_answe
 from goldevidencebench.generate import EpisodeConfig, generate_dataset
 from goldevidencebench.grade import grade_rows
 from goldevidencebench.model_runner import load_adapter, run_adapter
-from goldevidencebench.util import read_jsonl, write_jsonl
+from goldevidencebench.util import get_env, read_jsonl, write_jsonl
 
 
 def _estimate_tokens(text: str) -> int:
@@ -26,8 +26,8 @@ def _set_max_book_tokens(adapter: Any, max_book_tokens: int) -> None:
 
 def _env_snapshot() -> dict[str, Any]:
     return {
-        "TAGBENCH_MODEL": os.getenv("TAGBENCH_MODEL"),
-        "TAGBENCH_REQUIRE_CITATIONS": os.getenv("TAGBENCH_REQUIRE_CITATIONS"),
+        "GOLDEVIDENCEBENCH_MODEL": get_env("MODEL"),
+        "GOLDEVIDENCEBENCH_REQUIRE_CITATIONS": get_env("REQUIRE_CITATIONS"),
     }
 
 

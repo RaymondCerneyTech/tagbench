@@ -12,6 +12,7 @@ except Exception:  # pragma: no cover - optional dependency
 
 from goldevidencebench.adapters.llama_prompt import truncate_tokens
 from goldevidencebench.baselines import parse_updates
+from goldevidencebench.util import get_env
 from goldevidencebench.book import LedgerEntry, render_book
 
 JSON_UPDATES_GRAMMAR = r"""
@@ -131,19 +132,19 @@ class LlmBookBuilderAdapter:
         n_threads: int | None = None,
         max_book_tokens: int = 1600,
     ) -> None:
-        env_chunk = os.getenv("TAGBENCH_BUILDER_CHUNK_TOKENS")
+        env_chunk = get_env("BUILDER_CHUNK_TOKENS")
         if env_chunk:
             try:
                 chunk_tokens = int(env_chunk)
             except ValueError:
                 pass
-        builder_model_path = builder_model_path or os.getenv("TAGBENCH_BUILDER_MODEL")
-        model_path = model_path or os.getenv("TAGBENCH_MODEL")
+        builder_model_path = builder_model_path or get_env("BUILDER_MODEL")
+        model_path = model_path or get_env("MODEL")
         if not model_path:
-            raise ValueError("Set TAGBENCH_MODEL to a GGUF model path or pass model_path.")
+            raise ValueError("Set GOLDEVIDENCEBENCH_MODEL (or legacy TAGBENCH_MODEL) to a GGUF model path or pass model_path.")
 
-        builder_mode = os.getenv("TAGBENCH_BUILDER_MODE", "llm_fullscan").strip().lower()
-        per_key_llm = os.getenv("TAGBENCH_BUILDER_PER_KEY_LLM", "1").strip().lower()
+        builder_mode = get_env("BUILDER_MODE", "llm_fullscan").strip().lower()
+        per_key_llm = get_env("BUILDER_PER_KEY_LLM", "1").strip().lower()
         self.builder_mode = builder_mode
         self.per_key_llm = per_key_llm not in {"0", "false", "no"}
         self.cfg = BuilderConfig(chunk_tokens=chunk_tokens)

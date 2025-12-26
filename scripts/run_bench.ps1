@@ -1,22 +1,30 @@
 param(
     [ValidateSet("smoke", "standard")]
     [string]$Preset = "smoke",
-    [string]$ModelPath = $env:TAGBENCH_MODEL,
+    [string]$ModelPath = $env:GOLDEVIDENCEBENCH_MODEL,
+    [string]$LegacyModelPath = $env:TAGBENCH_MODEL,
     [string]$OutDir = "runs",
     [switch]$RequireCitations,
     [switch]$UseDerivedQueries
 )
 
+if (-not $ModelPath -and $LegacyModelPath) {
+    $ModelPath = $LegacyModelPath
+}
+
 if (-not $ModelPath) {
-    Write-Error "Set -ModelPath or TAGBENCH_MODEL before running."
+    Write-Error "Set -ModelPath or GOLDEVIDENCEBENCH_MODEL before running."
     exit 1
 }
 
+$env:GOLDEVIDENCEBENCH_MODEL = $ModelPath
 $env:TAGBENCH_MODEL = $ModelPath
 if ($RequireCitations) {
-    $env:TAGBENCH_REQUIRE_CITATIONS = "1"
+    $env:GOLDEVIDENCEBENCH_REQUIRE_CITATIONS = "1"
+$env:TAGBENCH_REQUIRE_CITATIONS = "1"
 } else {
-    $env:TAGBENCH_REQUIRE_CITATIONS = "0"
+    $env:GOLDEVIDENCEBENCH_REQUIRE_CITATIONS = "0"
+$env:TAGBENCH_REQUIRE_CITATIONS = "0"
 }
 
 if ($Preset -eq "smoke") {

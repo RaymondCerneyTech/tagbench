@@ -4,6 +4,7 @@ import json
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
+import os
 
 
 def read_jsonl(path: str | Path) -> Iterator[dict[str, Any]]:
@@ -22,4 +23,16 @@ def write_jsonl(path: str | Path, rows: Iterable[dict[str, Any]]) -> None:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False))
             f.write("\n")
+
+ENV_PREFIX = "GOLDEVIDENCEBENCH_"
+LEGACY_ENV_PREFIX = "TAGBENCH_"
+
+def get_env(key: str, default: str | None = None) -> str | None:
+    value = os.getenv(f"{ENV_PREFIX}{key}")
+    if value is not None:
+        return value
+    value = os.getenv(f"{LEGACY_ENV_PREFIX}{key}")
+    if value is not None:
+        return value
+    return default
 

@@ -53,8 +53,8 @@ def _flatten(row: dict[str, Any]) -> dict[str, Any]:
             out[key] = cfg.get(key)
 
     env = row.get("env", {})
-    out["TAGBENCH_MODEL"] = env.get("TAGBENCH_MODEL")
-    out["TAGBENCH_REQUIRE_CITATIONS"] = env.get("TAGBENCH_REQUIRE_CITATIONS")
+    out["GOLDEVIDENCEBENCH_MODEL"] = env.get("GOLDEVIDENCEBENCH_MODEL")
+    out["GOLDEVIDENCEBENCH_REQUIRE_CITATIONS"] = env.get("GOLDEVIDENCEBENCH_REQUIRE_CITATIONS")
 
     metrics = row.get("metrics", {})
     for key in (
@@ -414,7 +414,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Summarize goldevidencebench results JSON into CSV/JSON.")
+    parser = argparse.ArgumentParser(description="Summarize GoldEvidenceBench results JSON into CSV/JSON.")
     parser.add_argument("--in", dest="input_path", type=Path, default=Path("runs/combined.json"))
     parser.add_argument("--out-csv", dest="out_csv", type=Path, default=Path("runs/summary.csv"))
     parser.add_argument("--out-json", dest="out_json", type=Path, default=Path("runs/summary.json"))

@@ -8,6 +8,7 @@ import random
 from goldevidencebench.baselines import parse_book_ledger
 from goldevidencebench.book import LedgerEntry, render_book
 from goldevidencebench.adapters.llama_prompt import extract_ledger, truncate_tokens, build_prompt
+from goldevidencebench.util import get_env
 
 
 @dataclass(frozen=True)
@@ -193,16 +194,16 @@ class RetrievalLlamaCppAdapter:
         n_threads: int | None = None,
         max_book_tokens: int = 1600,
     ) -> None:
-        include_clear_env = os.getenv("TAGBENCH_RETRIEVAL_INCLUDE_CLEAR", "1").strip().lower()
-        k_env = os.getenv("TAGBENCH_RETRIEVAL_K", "1").strip()
-        wrong_type = os.getenv("TAGBENCH_RETRIEVAL_WRONG_TYPE", "none").strip().lower()
-        drop_env = os.getenv("TAGBENCH_RETRIEVAL_DROP_PROB", "0").strip()
-        drop_seed_env = os.getenv("TAGBENCH_RETRIEVAL_DROP_SEED", "0").strip()
-        order_env = os.getenv("TAGBENCH_RETRIEVAL_ORDER", "shuffle").strip().lower()
-        order_seed_env = os.getenv("TAGBENCH_RETRIEVAL_ORDER_SEED", "0").strip()
-        sandwich_env = os.getenv("TAGBENCH_RETRIEVAL_QUERY_SANDWICH", "0").strip().lower()
-        pick_env = os.getenv("TAGBENCH_RETRIEVAL_PICK_THEN_ANSWER", "0").strip().lower()
-        rerank_env = os.getenv("TAGBENCH_RETRIEVAL_RERANK", "none").strip().lower()
+        include_clear_env = get_env("RETRIEVAL_INCLUDE_CLEAR", "1").strip().lower()
+        k_env = get_env("RETRIEVAL_K", "1").strip()
+        wrong_type = get_env("RETRIEVAL_WRONG_TYPE", "none").strip().lower()
+        drop_env = get_env("RETRIEVAL_DROP_PROB", "0").strip()
+        drop_seed_env = get_env("RETRIEVAL_DROP_SEED", "0").strip()
+        order_env = get_env("RETRIEVAL_ORDER", "shuffle").strip().lower()
+        order_seed_env = get_env("RETRIEVAL_ORDER_SEED", "0").strip()
+        sandwich_env = get_env("RETRIEVAL_QUERY_SANDWICH", "0").strip().lower()
+        pick_env = get_env("RETRIEVAL_PICK_THEN_ANSWER", "0").strip().lower()
+        rerank_env = get_env("RETRIEVAL_RERANK", "none").strip().lower()
         try:
             k_val = int(k_env)
         except ValueError:
