@@ -170,6 +170,16 @@ Summarize results into CSV/JSON (for papers/plots):
 python .\scripts\summarize_results.py --in .\runs\combined.json --out-csv .\runs\summary.csv --out-json .\runs\summary.json
 ```
 
+Collect all run summaries into one CSV (optionally newest per pattern):
+
+```powershell
+python .\scripts\collect_runs.py --runs-dir .\runs --out-csv .\runs\summary_all.csv --latest-only
+```
+
+```powershell
+python .\scripts\summarize_results.py --in .\runs\combined.json --out-csv .\runs\summary.csv --out-json .\runs\summary.json
+```
+
 The summary JSON includes overall means plus group means for `value_acc`, `exact_acc`, `cite_f1`, and `entailment`.
 If `metrics_raw` are present, the summary includes `overall_raw` and `by_group_raw` for the same metrics.
 Use `--out-decomp-csv` to emit a per-run decomposition table (gold_present_rate, selection_rate,
