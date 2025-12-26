@@ -198,6 +198,12 @@ final N steps distractor-only (no updates), creating a longer tail after the las
 
 ## Efficient testing workflow (fast -> slow)
 
+Estimate runtime before a sweep:
+
+```powershell
+python .\scripts\estimate_runtime.py --seeds 3 --episodes 1 --queries 12 --state-modes 2 --distractor-profiles 2 --twins --seconds-per-q 30
+```
+
 Why long sweeps take hours: total queries roughly equal
 `seeds × state_modes × distractor_profiles × episodes × queries` (double if twins are on).
 At ~40s/query, 144 queries is ~1h36m, 288 queries is ~3h12m.
