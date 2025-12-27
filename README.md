@@ -1,6 +1,6 @@
 # GoldEvidenceBench
 
-GoldEvidenceBench (CLI: `goldevidencebench`) is a benchmark + harness for long-context state tracking. It generates synthetic "episode logs" with evolving state (kv/counter/set/relational), distractors (including instruction injection), and queries that require answering from the latest state update. It evaluates open-book vs closed-book protocols, enforces citation support IDs with capped-k + F1, checks entailment-from-citations, and uses counterfactual twin episodes to detect shortcut heuristics. It also reports efficiency (tokens/query, passes, wall time) so you can measure capability per compute.
+GoldEvidenceBench (CLI: `goldevidencebench`) is a benchmark + harness for long-context state tracking. It generates synthetic "episode logs" with evolving state (kv/kv_commentary/counter/set/relational), distractors (including instruction injection), and queries that require answering from the latest state update. It evaluates open-book vs closed-book protocols, enforces citation support IDs with capped-k + F1, checks entailment-from-citations, and uses counterfactual twin episodes to detect shortcut heuristics. It also reports efficiency (tokens/query, passes, wall time) so you can measure capability per compute.
 
 GoldEvidenceBench is a small benchmark + reference codebase for testing whether an LLM can track evolving state across long documents by reading its own "book" artifacts:
 
@@ -71,9 +71,9 @@ The benchmark generates synthetic episodes (updates + distractors + queries), in
 These are the CLI defaults (picked to create long-ish documents with frequent distractors):
 
 - `episodes=20`, `steps=220`, `keys=14`, `queries=12`, `derived_query_rate=0.35`, `chapters=8`, `twins=true`
-- `distractor_rate=0.50`, `clear_rate=0.08`
+- `distractor_rate=0.50`, `clear_rate=0.08`, `note_rate=0.12` (kv_commentary only)
 - `distractor_profile=instruction` (adds spec-violating instructions); `instruction_suite` adds quoted/format variants; `adversarial` adds stale-echo distractors
-- `state_mode=kv` (switch to `counter`, `set`, or `relational`)
+- `state_mode=kv` (switch to `kv_commentary`, `counter`, `set`, or `relational`)
 - `require_citations=true` (questions ask for JSON `{value, support_ids}` with max 3)
 - Closed-book is the headline score (`goldevidencebench run` defaults to `--protocol closed_book`; open-book is diagnostic)
 
@@ -110,13 +110,14 @@ Each row looks like:
 - `gold`: `{value, support_ids}` where `support_ids` contains the authoritative UPDATE ID that establishes the current value
 - `meta`: includes `requires_citation`, the queried `key`, and derived-query fields
 - `schema_version`: `"0.1"`
-- `state_mode`: `kv|counter|set|relational`
+- `state_mode`: `kv|kv_commentary|counter|set|relational`
 
 Derived queries add `meta.query_type=derived` with a `derived_op` and optional `derived_manager` (relational reports).
 
 State dynamics:
 
 - `kv` (default): standard key->value overwrites
+- `kv_commentary`: like kv, but inserts non-authoritative NOTE ledger lines (latest_step can be wrong)
 - `counter`: numeric accumulators (increments)
 - `set`: membership add/remove (values are comma-separated lists)
 - `relational`: reassignment tasks (e.g., who reports to whom)
@@ -200,6 +201,13 @@ python .\scripts\summarize_results.py --in .\runs\combined.json --out-json .\run
 To force longer recency gaps, add `--tail-distractor-steps N` when generating or sweeping. This makes the
 final N steps distractor-only (no updates), creating a longer tail after the last update.
 
+Speed: what actually dominates runtime
+
+- Prefill usually dominates decode (long book/context). Cut prefill first: keep `--max-book-tokens` small while iterating.
+- Use smoke/triage presets during development; save `standard` runs for headline tables.
+- Total queries scale as `seeds x state_modes x distractor_profiles x episodes x queries` (twins doubles it).
+- If selection is the bottleneck, add a selection-only mode that predicts support_id with minimal output; it can be much faster than full answers.
+
 ## Efficient testing workflow (fast -> slow)
 
 Reference system (baseline vs reranker in one command):
@@ -229,6 +237,16 @@ Selector bake-off (quick preset, four rerank modes):
 
 Expected output: updated `runs\summary_all.csv` with selector_quick_<rerank>_k2/4/8 rows for `none`,
 `latest_step`, `last_occurrence`, and `prefer_set_latest`.
+
+Selector-only (fast selection metrics, skip LLM answers):
+
+```powershell
+.\scripts\run_selector_only.ps1 -Preset quick -ModelPath "C:\AI\models\your-model.gguf" -Rerank latest_step
+```
+
+Use this when tuning selector policies. It skips answer generation and only emits `support_ids`, so the relevant numbers are `gold_present_rate` and `selection_rate` (value accuracy is not meaningful in this mode).
+
+This is much faster because it emits only `support_ids`. Use `gold_present_rate` and `selection_rate` for analysis.
 
 Estimate runtime before a sweep:
 
@@ -323,7 +341,7 @@ Set `GOLDEVIDENCEBENCH_BUILDER_CHUNK_TOKENS` to control builder chunk size.
 Set `GOLDEVIDENCEBENCH_BUILDER_MODE` to `heuristic`, `llm_fullscan` (default), or `llm_perkey`.
 Set `GOLDEVIDENCEBENCH_BUILDER_PER_KEY_LLM=0` to disable per-key LLM calls (deterministic fallback).
 Retrieval-first answerer (use only the latest ledger entry for the key): `goldevidencebench.adapters.retrieval_llama_cpp_adapter:create_adapter`.
-Env var names use the `GOLDEVIDENCEBENCH_` prefix; legacy `TAGBENCH_` variables are still accepted.
+Env var names use the `GOLDEVIDENCEBENCH_` prefix.
 Set `GOLDEVIDENCEBENCH_RETRIEVAL_K` to include top-k latest entries for the key (default 1). Set
 `GOLDEVIDENCEBENCH_RETRIEVAL_WRONG_TYPE` to `none`, `same_key`, or `other_key` to inject a wrong line for robustness
 testing. Use `GOLDEVIDENCEBENCH_RETRIEVAL_INCLUDE_CLEAR=0` to skip CLEAR entries.
@@ -337,6 +355,9 @@ Set `GOLDEVIDENCEBENCH_RETRIEVAL_PICK_THEN_ANSWER=1` to force a two-step flow: p
 first, then answer using only that line.
 Set `GOLDEVIDENCEBENCH_RETRIEVAL_RERANK=latest_step|last_occurrence|prefer_set_latest` to deterministically
 choose a candidate before answering (non-LLM selector baseline).
+Set `GOLDEVIDENCEBENCH_RETRIEVAL_SELECTOR_ONLY=1` to skip answer generation and emit only `support_ids`.
+Use selection metrics (`gold_present_rate`, `selection_rate`) for speed-focused iterations; value accuracy is not meaningful
+in selector-only mode.
 
 Retrieval order bias (example, k=4, s3q16, kv/standard, gold always present):
 
@@ -394,6 +415,32 @@ selection in this regime and can lower gold_last.
 
 Reranker baseline (same_key, k=4, shuffle, s3q16):
 
+Selector failure mode (kv_commentary: NOTE lines are non-authoritative):
+
+```powershell
+$env:GOLDEVIDENCEBENCH_RETRIEVAL_RERANK = "latest_step"
+$env:GOLDEVIDENCEBENCH_RETRIEVAL_K = "4"
+goldevidencebench sweep --out runs --seeds 2 --episodes 1 --steps 120 --queries 8 `
+  --state-modes kv_commentary --distractor-profiles standard `
+  --adapter goldevidencebench.adapters.retrieval_llama_cpp_adapter:create_adapter --no-derived-queries `
+  --no-twins --require-citations --results-json .\runs\combined.json --max-book-tokens 400 --note-rate 0.25
+python .\scripts\summarize_results.py --in .\runs\combined.json --out-json .\runs\summary.json
+```
+
+Example outcome (kv_commentary, prefer_set_latest): value_acc 0.75, exact_acc 0.75, entailment 1.0. With naive latest_step in the same setting, value_acc was 0.25 and exact_acc 0.0, showing NOTE lines can break recency-based selectors and a simple policy fixes it.
+
+KV commentary sanity check (from runs/summary_all.csv, matched A/B: same seeds + settings):
+
+| preset | k | rerank | gold_present | selection_rate | value_acc | entailment |
+| --- | --- | --- | --- | --- | --- | --- |
+| custom | 4 | latest_step | 1 | 1.0 | 0.75 | 0.75 |
+| custom | 4 | prefer_set_latest | 1 | 0.75 | 0.75 | 1.0 |
+
+Matched A/B shows `latest_step` maximizes selection but can cite non-authoritative NOTE lines (entailment drops), while `prefer_set_latest` preserves entailment.
+
+
+In this mode, NOTE lines appear after real updates, so `latest_step` can fail while `prefer_set_latest` holds.
+
 - rerank none: accuracy_when_gold_present 0.3333, selection_rate 0.3333
 - rerank latest_step: accuracy_when_gold_present 0.625, selection_rate 0.625
 
@@ -416,6 +463,22 @@ Selector quick preset (same_key, shuffle, s2q12):
 - rerank latest_step: k=2 1.0, k=4 1.0, k=8 1.0
 
 Quick preset takeaway: even a small reranker makes selection near-perfect in fast runs.
+
+## One command reproduces the headline
+
+Run one script, get one CSV, and compare the table below:
+
+```powershell
+.\scripts\run_reference.ps1 -Preset standard -ModelPath "C:\AI\models\your-model.gguf"
+```
+
+This writes `runs\summary_all.csv`. The "Report preset (s5q24)" table below is a direct copy of those rows.
+
+Headline takeaways:
+
+- Selection degrades as k grows when using LLM-only selection.
+- Deterministic reranking (latest_step/prefer_set_latest) restores near-perfect selection when gold is present.
+- Naive positional heuristics (last_occurrence) fail under shuffle, showing order bias is real.
 
 ## Reference proof (selector vs LLM)
 
@@ -466,6 +529,16 @@ Interpretation: selection under ambiguity is the bottleneck. The LLM-only select
 - k=8: rerank none 0.1583, rerank latest_step 0.4167
 
 Decomposition line per run is `gold_present_rate -> selection_rate -> accuracy_when_gold_present -> overall accuracy`.
+
+Formulas people can use:
+
+- `gold_present_rate` = fraction of rows where the gold line is in context.
+- `selection_rate` = fraction of gold-present rows that cite the gold line.
+- `accuracy_when_gold_present` = accuracy conditioned on gold-present rows.
+- `overall_accuracy` = `gold_present_rate * accuracy_when_gold_present`.
+- `selection_gap` = `accuracy_when_gold_present - overall_accuracy` (loss from selection + formatting).
+
+Blunt system rule: if `gold_present_rate` is high but `selection_rate` is low, fix selection/ranking. If `gold_present_rate` is low, fix retrieval/recall. If both are high but accuracy is low, fix answer formatting or value extraction.
 
 Reproduce the k=4 order-bias run:
 
@@ -561,4 +634,32 @@ python -m pip install -e .[dev]
 python -m pytest
 python -m ruff check .
 ```
-What's new: GoldEvidenceBench now evaluates closed-book state tracking by default (answer using only a derived "book" artifact, not the raw episode log), adds richer state dynamics (kv|counter|set|relational) and derived-invariant queries, and includes adversarial distractors such as instruction injection, format traps, and stale-echo repeats of outdated values. To reduce loopholes, UPDATE IDs are non-monotonic (hash-like) and each episode includes a counterfactual twin; grading reports both twin_consistency and twin_flip_rate alongside support_bloat. `goldevidencebench run` also prints an efficiency curve (tokens read, tokens/query, passes, wall-clock) so accuracy can be compared against compute cost.
+What's new: GoldEvidenceBench now evaluates closed-book state tracking by default (answer using only a derived "book" artifact, not the raw episode log), adds richer state dynamics (kv|kv_commentary|counter|set|relational) and derived-invariant queries, and includes adversarial distractors such as instruction injection, format traps, and stale-echo repeats of outdated values. To reduce loopholes, UPDATE IDs are non-monotonic (hash-like) and each episode includes a counterfactual twin; grading reports both twin_consistency and twin_flip_rate alongside support_bloat. `goldevidencebench run` also prints an efficiency curve (tokens read, tokens/query, passes, wall-clock) so accuracy can be compared against compute cost.
+
+
+## Related work (links)
+
+### Long-context + positional sensitivity
+- Lost in the Middle (position bias in long contexts): https://arxiv.org/abs/2307.03172
+- StreamingLLM / ?Attention Sinks? (long-context behavior + streaming tricks): https://arxiv.org/abs/2309.17453
+- LongBench (long-context evaluation suite): https://arxiv.org/abs/2308.14508
+- RULER (stress tests for long-context retrieval/selection): https://arxiv.org/abs/2404.06654
+- L-Eval (long-context evaluation): https://arxiv.org/abs/2307.11088
+- LooGLE (long dependency benchmark): https://arxiv.org/abs/2311.04939
+  - LooGLE v2 (newer version): https://arxiv.org/abs/2510.22548
+- ?Context length alone hurts reasoning? (relevant to ?gold present but still fails?): https://arxiv.org/abs/2510.05381
+
+### State tracking / long-text motivation (what kicked this off)
+- MIT News: PaTH Attention (state tracking / long text): https://news.mit.edu/2025/new-way-to-increase-large-language-model-capabilities-1217
+
+### RAG evaluation toolkits (end-to-end pipelines)
+- RAGAS: https://github.com/explodinggradients/ragas
+- TruLens: https://www.trulens.org/
+- LangSmith evals (practical eval workflows): https://docs.langchain.com/langsmith/evaluation-quickstart
+- OpenAI Evals (general eval harness): https://github.com/openai/evals
+
+### Grounded generation + citations / attribution
+- KILT (knowledge-intensive tasks + provenance): https://arxiv.org/abs/2009.02252
+- ALCE (Attributed LLMs / citation benchmark): https://arxiv.org/abs/2305.14627
+- SelfCite (improving citation quality via context ablation): https://arxiv.org/abs/2502.09604
+- FRONT (fine-grained grounded citations on ALCE): https://arxiv.org/abs/2408.04568

@@ -13,10 +13,16 @@ _UPDATE_SET_RE = re.compile(
 _UPDATE_CLEAR_RE = re.compile(
     rf"^- \[(?P<uid>{_ID})\] UPDATE step=(?P<step>\d+) CLEAR (?P<key>tag\.\d{{2}})$"
 )
+_UPDATE_NOTE_RE = re.compile(
+    rf"^- \[(?P<uid>{_ID})\] UPDATE step=(?P<step>\d+) NOTE (?P<key>tag\.\d{{2}}) = (?P<value>.+)$"
+)
 _BOOK_SET_RE = re.compile(
     rf"^- \[(?P<uid>{_ID})\] step=(?P<step>\d+) SET (?P<key>tag\.\d{{2}}) = (?P<value>.+)$"
 )
 _BOOK_CLEAR_RE = re.compile(rf"^- \[(?P<uid>{_ID})\] step=(?P<step>\d+) CLEAR (?P<key>tag\.\d{{2}})$")
+_BOOK_NOTE_RE = re.compile(
+    rf"^- \[(?P<uid>{_ID})\] step=(?P<step>\d+) NOTE (?P<key>tag\.\d{{2}}) = (?P<value>.+)$"
+)
 _BOOK_TITLE_RE = re.compile(r"^# .+")
 _BOOK_GLOSSARY_RE = re.compile(r"^- (tag\.\d{2}): .+")
 _BOOK_CHAPTER_RE = re.compile(r"^## Chapter \d+$")
@@ -62,6 +68,18 @@ def parse_updates(document: str) -> list[dict[str, Any]]:
                 }
             )
             continue
+        m = _UPDATE_NOTE_RE.match(line)
+        if m:
+            entries.append(
+                {
+                    "uid": m.group("uid"),
+                    "step": int(m.group("step")),
+                    "op": "NOTE",
+                    "key": m.group("key").strip(),
+                    "value": m.group("value").strip(),
+                }
+            )
+            continue
     return entries
 
 
@@ -98,6 +116,18 @@ def parse_book_ledger(book: str) -> list[dict[str, Any]]:
                     "op": "CLEAR",
                     "key": m.group("key").strip(),
                     "value": None,
+                }
+            )
+            continue
+        m = _BOOK_NOTE_RE.match(line)
+        if m:
+            entries.append(
+                {
+                    "uid": m.group("uid"),
+                    "step": int(m.group("step")),
+                    "op": "NOTE",
+                    "key": m.group("key").strip(),
+                    "value": m.group("value").strip(),
                 }
             )
             continue
@@ -165,7 +195,7 @@ def validate_book_artifact(book: str) -> dict[str, Any]:
         if line.strip() == "## Episode Log":
             errors.append("episode_log_leak")
             break
-        if _UPDATE_SET_RE.match(line) or _UPDATE_CLEAR_RE.match(line):
+        if _UPDATE_SET_RE.match(line) or _UPDATE_CLEAR_RE.match(line) or _UPDATE_NOTE_RE.match(line):
             errors.append("update_line_leak")
             break
         idx += 1
@@ -186,7 +216,7 @@ def validate_book_artifact(book: str) -> dict[str, Any]:
         if line.startswith("## "):
             errors.append("unexpected_section_after_ledger")
             break
-        if not (_BOOK_SET_RE.match(line) or _BOOK_CLEAR_RE.match(line)):
+        if not (_BOOK_SET_RE.match(line) or _BOOK_CLEAR_RE.match(line) or _BOOK_NOTE_RE.match(line)):
             errors.append("invalid_ledger_line")
             break
         idx += 1
@@ -227,10 +257,14 @@ def _apply_updates(
         key = e["key"]
         if e["op"] == "SET":
             state[key] = _parse_value(state_mode, e["value"])
-        else:
+            last_support[key] = e["uid"]
+            last_op[key] = e["op"]
+        elif e["op"] == "CLEAR":
             state[key] = set() if state_mode == "set" else None
-        last_support[key] = e["uid"]
-        last_op[key] = e["op"]
+            last_support[key] = e["uid"]
+            last_op[key] = e["op"]
+        else:
+            continue
     return state, last_support, last_op
 
 

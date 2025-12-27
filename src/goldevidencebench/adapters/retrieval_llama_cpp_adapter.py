@@ -23,6 +23,7 @@ class RetrievalConfig:
     query_sandwich: bool = False
     pick_then_answer: bool = False
     rerank_mode: str = "none"  # none|latest_step|last_occurrence|prefer_set_latest
+    selection_only: bool = False
 
 
 def _sorted_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -218,6 +219,7 @@ class RetrievalLlamaCppAdapter:
         sandwich_env = get_env("RETRIEVAL_QUERY_SANDWICH", "0").strip().lower()
         pick_env = get_env("RETRIEVAL_PICK_THEN_ANSWER", "0").strip().lower()
         rerank_env = get_env("RETRIEVAL_RERANK", "none").strip().lower()
+        selection_only_env = get_env("RETRIEVAL_SELECTOR_ONLY", "0").strip().lower()
         try:
             k_val = int(k_env)
         except ValueError:
@@ -252,29 +254,124 @@ class RetrievalLlamaCppAdapter:
                 in {"none", "latest_step", "last_occurrence", "prefer_set_latest"}
                 else "none"
             ),
+            selection_only=selection_only_env in {"1", "true", "yes"},
         )
+        if self.cfg.selection_only:
+            self.cfg = RetrievalConfig(
+                include_clear=self.cfg.include_clear,
+                k=self.cfg.k,
+                wrong_type=self.cfg.wrong_type,
+                drop_prob=self.cfg.drop_prob,
+                drop_seed=self.cfg.drop_seed,
+                order=self.cfg.order,
+                order_seed=self.cfg.order_seed,
+                query_sandwich=self.cfg.query_sandwich,
+                pick_then_answer=False,
+                rerank_mode=self.cfg.rerank_mode,
+                selection_only=True,
+            )
         from goldevidencebench.adapters.llama_cpp_adapter import LlamaCppAdapter
 
-        self._answerer = LlamaCppAdapter(
-            model_path=model_path,
-            n_ctx=n_ctx,
-            n_threads=n_threads,
-            max_book_tokens=max_book_tokens,
-            query_sandwich=self.cfg.query_sandwich,
+        self._answerer = (
+            None
+            if self.cfg.selection_only
+            else LlamaCppAdapter(
+                model_path=model_path,
+                n_ctx=n_ctx,
+                n_threads=n_threads,
+                max_book_tokens=max_book_tokens,
+                query_sandwich=self.cfg.query_sandwich,
+            )
         )
         self._last_diag: dict[str, Any] | None = None
 
     @property
     def max_book_tokens(self) -> int:
+        if self._answerer is None:
+            return 0
         return self._answerer.max_book_tokens
 
     @max_book_tokens.setter
     def max_book_tokens(self, value: int) -> None:
+        if self._answerer is None:
+            return
         self._answerer.max_book_tokens = value
+
+    def _empty_output(self) -> dict[str, Any]:
+        return {"value": "", "support_ids": []}
+
+    def _predict_selection_only(self, row: dict[str, Any]) -> dict[str, Any]:
+        book = row.get("book") or row.get("artifact")
+        if not book:
+            return self._empty_output()
+        key = row.get("meta", {}).get("key")
+        query_type = row.get("meta", {}).get("query_type")
+        if query_type and query_type != "direct":
+            return self._empty_output()
+        if not key:
+            return self._empty_output()
+        entries = parse_book_ledger(book)
+        if not entries:
+            return self._empty_output()
+        selected, diag, wrong_entry = _select_entries_for_key(
+            entries=entries, key=key, k=self.cfg.k, wrong_type=self.cfg.wrong_type
+        )
+        rng = random.Random(self.cfg.drop_seed ^ hash(row.get("id", "")))
+        selected, dropped = _apply_drop_with_rng(
+            selected=selected,
+            correct_uid=diag.get("correct_uid"),
+            wrong_entry=wrong_entry,
+            drop_prob=self.cfg.drop_prob,
+            rng=rng,
+        )
+        order_applied = None
+        if self.cfg.order == "shuffle" and len(selected) > 1:
+            shuffle_rng = random.Random(self.cfg.order_seed ^ hash(row.get("id", "")))
+            shuffle_rng.shuffle(selected)
+            order_applied = "shuffle"
+        elif self.cfg.order in {"gold_first", "gold_middle", "gold_last"} and selected:
+            selected, order_applied = _apply_order(
+                selected=selected, correct_uid=diag.get("correct_uid"), order=self.cfg.order
+            )
+        self._last_diag = {
+            "id": row.get("id"),
+            "key": key,
+            **diag,
+            "drop_prob": self.cfg.drop_prob,
+            "dropped_correct": dropped,
+            "order": order_applied,
+        }
+        if not selected:
+            return self._empty_output()
+        if self.cfg.rerank_mode != "none":
+            if self.cfg.rerank_mode == "latest_step":
+                chosen = _rerank_latest_step(selected)
+            elif self.cfg.rerank_mode == "last_occurrence":
+                chosen = _rerank_last_occurrence(selected)
+            elif self.cfg.rerank_mode == "prefer_set_latest":
+                chosen = _rerank_prefer_set_latest(selected)
+            else:
+                chosen = None
+            self._last_diag = {
+                **(self._last_diag or {}),
+                "rerank_mode": self.cfg.rerank_mode,
+                "reranked_uid": chosen.get("uid") if chosen else None,
+            }
+        else:
+            chosen = selected[0] if selected else None
+            self._last_diag = {
+                **(self._last_diag or {}),
+                "rerank_mode": "none",
+                "reranked_uid": chosen.get("uid") if chosen else None,
+            }
+        support_ids = [chosen["uid"]] if chosen else []
+        return {"value": "", "support_ids": support_ids}
 
     def predict(self, row: dict[str, Any], *, protocol: str = "open_book") -> dict[str, Any]:
         if protocol != "closed_book":
             raise ValueError("RetrievalLlamaCppAdapter supports closed_book only.")
+        if self.cfg.selection_only:
+            return self._predict_selection_only(row)
         book = row.get("book") or row.get("artifact")
         if not book:
             raise ValueError("book/artifact required for closed_book inference.")
@@ -382,9 +479,13 @@ class RetrievalLlamaCppAdapter:
         return self._answerer.predict(row_for_adapter, protocol=protocol)
 
     def take_perf(self) -> dict[str, Any] | None:
+        if self._answerer is None:
+            return None
         return self._answerer.take_perf()
 
     def take_raw(self) -> dict[str, Any] | None:
+        if self._answerer is None:
+            return None
         return self._answerer.take_raw()
 
     def take_diag(self) -> dict[str, Any] | None:

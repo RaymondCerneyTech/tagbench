@@ -25,13 +25,8 @@ def write_jsonl(path: str | Path, rows: Iterable[dict[str, Any]]) -> None:
             f.write("\n")
 
 ENV_PREFIX = "GOLDEVIDENCEBENCH_"
-LEGACY_ENV_PREFIX = "TAGBENCH_"
-
 def get_env(key: str, default: str | None = None) -> str | None:
     value = os.getenv(f"{ENV_PREFIX}{key}")
-    if value is not None:
-        return value
-    value = os.getenv(f"{LEGACY_ENV_PREFIX}{key}")
     if value is not None:
         return value
     return default

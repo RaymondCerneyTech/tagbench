@@ -85,6 +85,8 @@ def build_streaming_book(*, document: str, episode_id: str, cfg: StreamingConfig
         chunk_text = "## Episode Log\n" + "\n".join(chunk)
         updates = parse_updates(chunk_text)
         for update in updates:
+            if update.get("op") == "NOTE":
+                continue
             last_by_key[update["key"]] = update
 
     ledger = [
@@ -179,6 +181,8 @@ class StreamingLlamaCppAdapter:
                 updates = parse_updates("## Episode Log\n" + chunk_text)
             for update in updates:
                 if update.get("key") is None:
+                    continue
+                if update.get("op") == "NOTE":
                     continue
                 last_by_key[update["key"]] = update
 

@@ -141,7 +141,7 @@ class LlmBookBuilderAdapter:
         builder_model_path = builder_model_path or get_env("BUILDER_MODEL")
         model_path = model_path or get_env("MODEL")
         if not model_path:
-            raise ValueError("Set GOLDEVIDENCEBENCH_MODEL (or legacy TAGBENCH_MODEL) to a GGUF model path or pass model_path.")
+            raise ValueError("Set GOLDEVIDENCEBENCH_MODEL to a GGUF model path or pass model_path.")
 
         builder_mode = get_env("BUILDER_MODE", "llm_fullscan").strip().lower()
         per_key_llm = get_env("BUILDER_PER_KEY_LLM", "1").strip().lower()
@@ -185,6 +185,8 @@ class LlmBookBuilderAdapter:
                 updates = parse_updates("## Episode Log\n" + chunk_text)
             for update in updates:
                 if update.get("key") is None:
+                    continue
+                if update.get("op") == "NOTE":
                     continue
                 last_by_key[update["key"]] = update
         return _render_book_from_state(document=document, episode_id=episode_id, last_by_key=last_by_key)
@@ -271,6 +273,8 @@ class LlmBookBuilderAdapter:
         updates = parse_updates(document)
         per_key: dict[str, list[dict[str, Any]]] = {}
         for upd in updates:
+            if upd.get("op") == "NOTE":
+                continue
             per_key.setdefault(upd["key"], []).append(upd)
 
         last_by_key: dict[str, dict[str, Any]] = {}
@@ -359,6 +363,8 @@ def build_book_from_updates(*, document: str, episode_id: str) -> str:
     updates = parse_updates(document)
     last_by_key: dict[str, dict[str, Any]] = {}
     for upd in updates:
+        if upd.get("op") == "NOTE":
+            continue
         last_by_key[upd["key"]] = upd
     return _render_book_from_state(document=document, episode_id=episode_id, last_by_key=last_by_key)
 
@@ -367,6 +373,8 @@ def build_book_per_key_deterministic(*, document: str, episode_id: str) -> str:
     updates = parse_updates(document)
     per_key: dict[str, list[dict[str, Any]]] = {}
     for upd in updates:
+        if upd.get("op") == "NOTE":
+            continue
         per_key.setdefault(upd["key"], []).append(upd)
     last_by_key = {key: events[-1] for key, events in per_key.items() if events}
     return _render_book_from_state(document=document, episode_id=episode_id, last_by_key=last_by_key)

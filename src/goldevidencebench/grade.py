@@ -103,6 +103,8 @@ def _implied_from_citations(
         for e in sorted(cited_entries, key=lambda x: x["step"]):
             if e["key"] != key:
                 continue
+            if e["op"] == "NOTE":
+                continue
             if e["step"] >= last_step:
                 last_step = e["step"]
                 implied = _parse_value(state_mode, e["value"])

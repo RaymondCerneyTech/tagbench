@@ -77,6 +77,7 @@ def _cmd_generate(ns: argparse.Namespace) -> int:
         twins=ns.twins,
         distractor_profile=ns.distractor_profile,
         state_mode=ns.state_mode,
+        note_rate=ns.note_rate,
     )
     rows = generate_dataset(seed=ns.seed, episodes=ns.episodes, cfg=cfg)
     write_jsonl(ns.out, rows)
@@ -323,6 +324,7 @@ def _cmd_sweep(ns: argparse.Namespace) -> int:
         "distractor_rate": ns.distractor_rate,
         "tail_distractor_steps": ns.tail_distractor_steps,
         "clear_rate": ns.clear_rate,
+        "note_rate": ns.note_rate,
         "require_citations": require_citations,
         "twins": ns.twins,
         "state_modes": ns.state_modes,
@@ -351,6 +353,7 @@ def _cmd_sweep(ns: argparse.Namespace) -> int:
                             distractor_rate=ns.distractor_rate,
                             tail_distractor_steps=ns.tail_distractor_steps,
                             clear_rate=ns.clear_rate,
+                            note_rate=ns.note_rate,
                             require_citations=require_citations,
                             distractor_profile=profile,
                             state_mode=mode,
@@ -502,6 +505,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     g.add_argument("--clear-rate", type=float, default=0.08)
     g.add_argument(
+        "--note-rate",
+        type=float,
+        default=0.12,
+        help="NOTE rate for kv_commentary (non-authoritative ledger lines).",
+    )
+    g.add_argument(
         "--distractor-profile",
         choices=["easy", "standard", "adversarial", "instruction", "instruction_suite"],
         default="instruction",
@@ -509,7 +518,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     g.add_argument(
         "--state-mode",
-        choices=["kv", "counter", "set", "relational"],
+        choices=["kv", "kv_commentary", "counter", "set", "relational"],
         default="kv",
         help="State dynamics to generate.",
     )
@@ -616,7 +625,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Force a distractor-only tail for the final N steps to stress recency.",
     )
     s.add_argument("--clear-rate", type=float, default=0.08)
-    s.add_argument("--state-modes", type=str, default="kv,counter,set,relational")
+    s.add_argument(
+        "--note-rate",
+        type=float,
+        default=0.12,
+        help="NOTE rate for kv_commentary (non-authoritative ledger lines).",
+    )
+    s.add_argument("--state-modes", type=str, default="kv,kv_commentary,counter,set,relational")
     s.add_argument("--distractor-profiles", type=str, default="instruction,adversarial")
     s.add_argument("--adapter", type=str, default=None, help="Optional adapter spec module:factory; defaults to ledger baseline.")
     s.add_argument("--max-support-k", type=int, default=3)

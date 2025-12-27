@@ -51,7 +51,7 @@ class LlamaCppAdapter:
     """
     Closed-book adapter that answers using a provided book artifact.
     Model path is taken from:
-    - env GOLDEVIDENCEBENCH_MODEL (or legacy TAGBENCH_MODEL)
+    - env GOLDEVIDENCEBENCH_MODEL
     - or constructor argument model_path
     """
 
@@ -65,7 +65,7 @@ class LlamaCppAdapter:
     ) -> None:
         model_path = model_path or get_env("MODEL")
         if not model_path:
-            raise ValueError("Set GOLDEVIDENCEBENCH_MODEL (or legacy TAGBENCH_MODEL) to a GGUF model path or pass model_path.")
+            raise ValueError("Set GOLDEVIDENCEBENCH_MODEL to a GGUF model path or pass model_path.")
         if not Path(model_path).exists():
             raise FileNotFoundError(model_path)
         require_citations_env = (get_env("REQUIRE_CITATIONS", "1") or "1").strip().lower()

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 class LedgerEntry:
     uid: str
     step: int
-    op: str  # "SET" | "CLEAR"
+    op: str  # "SET" | "CLEAR" | "NOTE"
     key: str
     value: str | None
 
@@ -17,6 +17,7 @@ def render_book(*, title: str, chapters: list[str], glossary: dict[str, str], le
     parts.append(f"# {title}\n")
     parts.append("## Reading Rules\n")
     parts.append("- The STATE LEDGER is authoritative for current state.\n")
+    parts.append("- Only SET/CLEAR lines update state; NOTE lines are commentary.\n")
     parts.append("- Chapter narrative may contain errors or distractors.\n")
     parts.append("- Support IDs (e.g., [U0007]) refer to ledger entries.\n")
     parts.append("\n")
@@ -36,6 +37,8 @@ def render_book(*, title: str, chapters: list[str], glossary: dict[str, str], le
             parts.append(f"- [{e.uid}] step={e.step} SET {e.key} = {e.value}\n")
         elif e.op == "CLEAR":
             parts.append(f"- [{e.uid}] step={e.step} CLEAR {e.key}\n")
+        elif e.op == "NOTE":
+            parts.append(f"- [{e.uid}] step={e.step} NOTE {e.key} = {e.value}\n")
         else:
             raise ValueError(f"Unknown ledger op: {e.op!r}")
     parts.append("\n")

@@ -1,5 +1,5 @@
 accuracy_when_gold_present,cite_f1,decomposition_line,drop_rate,entailment,exact_acc,gold_present_rate,mtime,pattern,rows,run_dir,run_name,selection_rate,value_acc
-0.0,0.0,1.0000 -> 0.0000 -> 0.0000 -> 0.0000,0.0,1.0,0.0,1.0,1766720337.3248098,runs,1,runs,runs,0.0,0.0
+0.75,0.75,1.0000 -> 1.0000 -> 0.7500 -> 0.7500,0.0,0.75,0.75,1.0,1766864138.272466,runs,1,runs,runs,1.0,0.75
 0.0,0.0,,0.3125,1.0,0.0,,1766554634.8488016,ab_pick_0_gold_first_k4_same,3,runs\ab_pick_0_gold_first_k4_same_s3q16,ab_pick_0_gold_first_k4_same_s3q16,0.0,0.0
 0.5625,0.5625,,0.4375,1.0,0.5625,,1766557722.7828567,ab_pick_0_gold_last_k4_same,3,runs\ab_pick_0_gold_last_k4_same_s3q16,ab_pick_0_gold_last_k4_same_s3q16,0.5625,0.5625
 0.0,0.0,,0.4375,1.0,0.0,,1766556185.8244164,ab_pick_0_gold_middle_k4_same,3,runs\ab_pick_0_gold_middle_k4_same_s3q16,ab_pick_0_gold_middle_k4_same_s3q16,0.0,0.0
@@ -55,6 +55,17 @@ accuracy_when_gold_present,cite_f1,decomposition_line,drop_rate,entailment,exact
 ,0.4333333333333333,,0.16666666666666666,1.0,0.4333333333333333,,1766532684.5598817,drop_k4_shuffle_p0.2,5,runs\drop_k4_shuffle_p0.2_s5q24,drop_k4_shuffle_p0.2_s5q24,,0.4333333333333333
 ,0.4333333333333333,,0.2916666666666667,1.0,0.4333333333333333,,1766536143.7273238,drop_k4_shuffle_p0.4,5,runs\drop_k4_shuffle_p0.4_s5q24,drop_k4_shuffle_p0.4_s5q24,,0.4333333333333333
 ,0.5083333333333333,,0.0,1.0,0.5083333333333333,,1766529445.658887,drop_k4_shuffle_p0,5,runs\drop_k4_shuffle_p0_s5q24,drop_k4_shuffle_p0_s5q24,,0.5083333333333333
+0.75,0.75,1.0000 -> 1.0000 -> 0.7500 -> 0.7500,0.0,0.75,0.75,1.0,1766866428.0907667,kv_commentary_ab_latest_step,1,runs\kv_commentary_ab_latest_step,kv_commentary_ab_latest_step,1.0,0.75
+0.75,0.75,1.0000 -> 0.7500 -> 0.7500 -> 0.7500,0.0,1.0,0.75,1.0,1766866590.526347,kv_commentary_ab_prefer_set_latest,1,runs\kv_commentary_ab_prefer_set_latest,kv_commentary_ab_prefer_set_latest,0.75,0.75
+0.0,0.3333333333333333,1.0000 -> 0.3333 -> 0.0000 -> 0.0000,0.0,0.0,0.0,1.0,1766858261.144385,selector_only_quick_last_occurrence_k2,2,runs\selector_only_quick_last_occurrence_k2,selector_only_quick_last_occurrence_k2,0.3333333333333333,0.0
+0.0,0.16666666666666666,1.0000 -> 0.1667 -> 0.0000 -> 0.0000,0.0,0.0,0.0,1.0,1766858261.9191582,selector_only_quick_last_occurrence_k4,2,runs\selector_only_quick_last_occurrence_k4,selector_only_quick_last_occurrence_k4,0.16666666666666666,0.0
+0.0,0.125,1.0000 -> 0.1250 -> 0.0000 -> 0.0000,0.0,0.0,0.0,1.0,1766858262.763264,selector_only_quick_last_occurrence_k8,2,runs\selector_only_quick_last_occurrence_k8,selector_only_quick_last_occurrence_k8,0.125,0.0
+0.0,1.0,1.0000 -> 1.0000 -> 0.0000 -> 0.0000,0.0,0.0,0.0,1.0,1766857846.5541291,selector_only_quick_latest_step_k2,2,runs\selector_only_quick_latest_step_k2,selector_only_quick_latest_step_k2,1.0,0.0
+0.0,1.0,1.0000 -> 1.0000 -> 0.0000 -> 0.0000,0.0,0.0,0.0,1.0,1766857847.4420924,selector_only_quick_latest_step_k4,2,runs\selector_only_quick_latest_step_k4,selector_only_quick_latest_step_k4,1.0,0.0
+0.0,1.0,1.0000 -> 1.0000 -> 0.0000 -> 0.0000,0.0,0.0,0.0,1.0,1766857848.3078084,selector_only_quick_latest_step_k8,2,runs\selector_only_quick_latest_step_k8,selector_only_quick_latest_step_k8,1.0,0.0
+0.0,0.3333333333333333,1.0000 -> 0.3333 -> 0.0000 -> 0.0000,0.0,0.0,0.0,1.0,1766858230.9543765,selector_only_quick_none_k2,2,runs\selector_only_quick_none_k2,selector_only_quick_none_k2,0.3333333333333333,0.0
+0.0,0.125,1.0000 -> 0.1250 -> 0.0000 -> 0.0000,0.0,0.0,0.0,1.0,1766858231.9342365,selector_only_quick_none_k4,2,runs\selector_only_quick_none_k4,selector_only_quick_none_k4,0.125,0.0
+0.0,0.08333333333333333,1.0000 -> 0.0833 -> 0.0000 -> 0.0000,0.0,0.0,0.0,1.0,1766858232.6892197,selector_only_quick_none_k8,2,runs\selector_only_quick_none_k8,selector_only_quick_none_k8,0.08333333333333333,0.0
 1.0,1.0,1.0000 -> 1.0000 -> 1.0000 -> 1.0000,0.0,1.0,1.0,1.0,1766729877.177522,selector_quick_latest_step_k2,2,runs\selector_quick_latest_step_k2,selector_quick_latest_step_k2,1.0,1.0
 1.0,1.0,1.0000 -> 1.0000 -> 1.0000 -> 1.0000,0.0,1.0,1.0,1.0,1766730302.1879702,selector_quick_latest_step_k4,2,runs\selector_quick_latest_step_k4,selector_quick_latest_step_k4,1.0,1.0
 1.0,1.0,1.0000 -> 1.0000 -> 1.0000 -> 1.0000,0.0,1.0,1.0,1.0,1766730723.0740583,selector_quick_latest_step_k8,2,runs\selector_quick_latest_step_k8,selector_quick_latest_step_k8,1.0,1.0

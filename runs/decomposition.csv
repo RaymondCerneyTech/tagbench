@@ -1,2 +1,2 @@
 accuracy_when_gold_present,baseline,distractor_profile,gold_present_rate,max_book_tokens,overall_cite_f1,overall_entailment,overall_exact_acc,overall_value_acc,pick_then_answer,queries,retrieval_drop_prob,retrieval_k,retrieval_order,retrieval_rerank,retrieval_wrong_type,seed,selection_rate,state_mode,steps
-0.0,tagbench.adapters.retrieval_llama_cpp_adapter:create_adapter,standard,1.0,400,0.0,1.0,0.0,0.0,,4,0.0,4,gold_first,,same_key,0,0.0,kv,240
+0.75,goldevidencebench.adapters.retrieval_llama_cpp_adapter:create_adapter,standard,1.0,400,0.75,0.75,0.75,0.75,,8,0.0,8,shuffle,latest_step,same_key,0,1.0,kv_commentary,80

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from goldevidencebench.baselines import iter_predictions
+from goldevidencebench.baselines import iter_predictions, predict_ledger_row
 from goldevidencebench.generate import EpisodeConfig, generate_dataset
 from goldevidencebench.grade import grade_rows
 
@@ -46,3 +46,21 @@ def test_closed_book_protocol_uses_book_artifact() -> None:
     ledger_closed = list(iter_predictions(data, baseline="ledger", protocol="closed_book"))
     res = grade_rows(data_rows=data, pred_by_id={p["id"]: p for p in ledger_closed}, citations="auto")
     assert res.exact_acc == 1.0
+
+def test_commentary_note_does_not_override_state() -> None:
+    row = {
+        "id": "Q0001",
+        "document": (
+            "# Ep\n\n"
+            "## Episode Log\n"
+            "- [U000001] UPDATE step=1 SET tag.00 = amber-0001\n"
+            "- [U000002] UPDATE step=2 NOTE tag.00 = crimson-0002\n"
+        ),
+        "book": "",
+        "gold": {"value": "amber-0001", "support_ids": ["U000001"]},
+        "meta": {"key": "tag.00", "state_mode": "kv_commentary", "query_type": "direct"},
+    }
+    pred = predict_ledger_row(row, protocol="open_book")
+    assert pred["value"] == "amber-0001"
+    assert pred["support_ids"] == ["U000001"]
+
