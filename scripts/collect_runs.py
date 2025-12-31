@@ -39,6 +39,7 @@ def _row_from_summary(path: Path, data: dict[str, Any]) -> dict[str, Any]:
         "accuracy_when_gold_present": retrieval.get("accuracy_when_gold_present"),
         "drop_rate": retrieval.get("drop_rate"),
         "decomposition_line": retrieval.get("decomposition_line"),
+        "state_integrity_rate": overall.get("state_integrity_rate_mean"),
     }
 
 

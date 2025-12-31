@@ -24,14 +24,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--drop-prob", type=float, default=0.0)
     parser.add_argument("--drop-seed", type=int, default=0)
     parser.add_argument("--include-clear", action="store_true")
+    parser.add_argument("--authoritative-only", action="store_true")
     parser.add_argument("--limit", type=int, default=0)
     return parser.parse_args()
 
 
-def _filter_entries(entries: list[dict[str, object]], include_clear: bool) -> list[dict[str, object]]:
-    if include_clear:
-        return entries
-    return [entry for entry in entries if entry.get("op") != "CLEAR"]
+def _filter_entries(
+    entries: list[dict[str, object]], include_clear: bool, authoritative_only: bool
+) -> list[dict[str, object]]:
+    filtered = entries
+    if not include_clear:
+        filtered = [entry for entry in filtered if entry.get("op") != "CLEAR"]
+    if authoritative_only:
+        filtered = [entry for entry in filtered if entry.get("op") != "NOTE"]
+    return filtered
 
 
 def main() -> int:
@@ -56,7 +62,7 @@ def main() -> int:
             if not book:
                 continue
             entries = parse_book_ledger(book)
-            entries = _filter_entries(entries, args.include_clear)
+            entries = _filter_entries(entries, args.include_clear, args.authoritative_only)
             if not entries:
                 continue
             selected, diag, wrong_entry = _select_entries_for_key(

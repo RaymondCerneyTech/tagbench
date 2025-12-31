@@ -26,6 +26,7 @@ class RetrievalConfig:
     pick_then_answer: bool = False
     rerank_mode: str = "none"  # none|latest_step|last_occurrence|prefer_set_latest|prefer_update_latest|linear
     selection_only: bool = False
+    authority_filter: bool = False
 
 
 @dataclass(frozen=True)
@@ -37,12 +38,15 @@ class LinearSelectorModel:
 _LINEAR_FEATURE_ORDER = [
     "bias",
     "step_norm",
+    "step_delta_norm",
     "pos_norm",
     "is_set",
     "is_clear",
     "is_add",
     "is_remove",
     "is_note",
+    "is_authoritative",
+    "is_update",
     "key_in_question",
     "value_in_question",
     "value_token_overlap",
@@ -53,6 +57,12 @@ _LINEAR_FEATURE_ORDER = [
 
 def _sorted_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(entries, key=lambda e: int(e.get("step", -1)), reverse=True)
+
+def _filter_authoritative(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not entries:
+        return entries
+    non_note = [e for e in entries if str(e.get("op", "")).upper() != "NOTE"]
+    return non_note if non_note else entries
 
 
 def _latest_entry_for_key(book: str, key: str) -> dict[str, Any] | None:
@@ -180,6 +190,7 @@ def _linear_features(
 ) -> list[float]:
     step = int(entry.get("step", 0))
     step_norm = step / max_step if max_step else 0.0
+    step_delta_norm = ((max_step - step) / max_step) if max_step else 0.0
     pos_norm = index / (total - 1) if total > 1 else 0.0
     op = str(entry.get("op", "")).upper()
     question_lower = (question or "").lower()
@@ -194,15 +205,21 @@ def _linear_features(
         overlap = 0.0
     question_len_norm = min(len(question_tokens) / 20.0, 1.0)
     value_len_norm = min(len(value_tokens) / 10.0, 1.0)
+    is_note = 1.0 if op == "NOTE" else 0.0
+    is_authoritative = 0.0 if op == "NOTE" else 1.0
+    is_update = 1.0 if op in {"SET", "ADD", "REMOVE", "CLEAR"} else 0.0
     return [
         1.0,
         step_norm,
+        step_delta_norm,
         pos_norm,
         1.0 if op == "SET" else 0.0,
         1.0 if op == "CLEAR" else 0.0,
         1.0 if op == "ADD" else 0.0,
         1.0 if op == "REMOVE" else 0.0,
-        1.0 if op == "NOTE" else 0.0,
+        is_note,
+        is_authoritative,
+        is_update,
         key_in_question,
         value_in_question,
         overlap,
@@ -340,6 +357,7 @@ class RetrievalLlamaCppAdapter:
         pick_env = get_env("RETRIEVAL_PICK_THEN_ANSWER", "0").strip().lower()
         rerank_env = get_env("RETRIEVAL_RERANK", "none").strip().lower()
         selection_only_env = get_env("RETRIEVAL_SELECTOR_ONLY", "0").strip().lower()
+        authority_filter_env = get_env("RETRIEVAL_AUTHORITY_FILTER", "0").strip().lower()
         linear_model_env = get_env("RETRIEVAL_LINEAR_MODEL", "").strip()
         try:
             k_val = int(k_env)
@@ -376,6 +394,7 @@ class RetrievalLlamaCppAdapter:
                 else "none"
             ),
             selection_only=selection_only_env in {"1", "true", "yes"},
+            authority_filter=authority_filter_env in {"1", "true", "yes"},
         )
         if self.cfg.selection_only:
             self.cfg = RetrievalConfig(
@@ -390,6 +409,7 @@ class RetrievalLlamaCppAdapter:
                 pick_then_answer=False,
                 rerank_mode=self.cfg.rerank_mode,
                 selection_only=True,
+                authority_filter=self.cfg.authority_filter,
             )
         from goldevidencebench.adapters.llama_cpp_adapter import LlamaCppAdapter
 
@@ -440,6 +460,10 @@ class RetrievalLlamaCppAdapter:
         entries = parse_book_ledger(book)
         if not entries:
             return self._empty_output()
+        if self.cfg.authority_filter:
+            entries = _filter_authoritative(entries)
+            if not entries:
+                return self._empty_output()
         selected, diag, wrong_entry = _select_entries_for_key(
             entries=entries, key=key, k=self.cfg.k, wrong_type=self.cfg.wrong_type
         )
@@ -519,6 +543,10 @@ class RetrievalLlamaCppAdapter:
         entries = parse_book_ledger(book)
         if not entries:
             return self._answerer.predict(row, protocol=protocol)
+        if self.cfg.authority_filter:
+            entries = _filter_authoritative(entries)
+            if not entries:
+                return self._answerer.predict(row, protocol=protocol)
         selected, diag, wrong_entry = _select_entries_for_key(
             entries=entries, key=key, k=self.cfg.k, wrong_type=self.cfg.wrong_type
         )

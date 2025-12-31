@@ -25,6 +25,10 @@ Question: "Where should we ship the order?"
 
 Correct evidence is Update 2 (99 Pine Ave). The NOTE is contextual but not authoritative. GoldEvidenceBench measures whether the system chooses the correct update and cites it, even when nearby notes mention older facts.
 
+## V2 takeaway (authority-aware selection)
+
+In kv_commentary, the dominant failure is *authoritativeness*, not selection or reasoning. Adding `RETRIEVAL_AUTHORITY_FILTER=1` (drop NOTE lines before selection) restores perfect end-to-end accuracy across k and seeds. This is now the recommended default for kv_commentary.
+
 ## Primary flow (the done path)
 
 1) Run one command to reproduce the headline:
@@ -68,6 +72,9 @@ $env:GOLDEVIDENCEBENCH_RETRIEVAL_LINEAR_MODEL=".\models\linear_selector.json"
 ```
 
 Use this when you want a learned selector instead of a fixed heuristic.
+Authority-aware features used by the linear selector: UPDATE vs NOTE, step distance, position, and key/value overlap.
+Authority filter baseline: set `GOLDEVIDENCEBENCH_RETRIEVAL_AUTHORITY_FILTER=1` to drop NOTE lines before selection.
+Recommended default for kv_commentary: keep `RETRIEVAL_AUTHORITY_FILTER=1`.
 Example training result (default settings): train_selection_rate 1.0000, test_selection_rate 1.0000.
 
 Observed A/B (s3q16, same settings):
@@ -610,6 +617,43 @@ KV commentary selector bake-off (s5q24, k=4, same_key, shuffle):
 | custom | 4 | prefer_update_latest | 1.0 | 0.5833 | 1.0 | 1.0 | 1.0 |
 | custom | 4 | linear | 1.0 | 0.9833 | 0.5667 | 0.5667 | 0.7250 |
 
+KV commentary grid (s3q16, same_key, k in {2,4,8}):
+
+| rerank | k | selection_rate | accuracy_when_gold_present | value_acc | entailment |
+| --- | --- | --- | --- | --- | --- |
+| prefer_set_latest | 2 | 0.7500 | 0.9792 | 0.9792 | 1.0000 |
+| prefer_set_latest | 4 | 0.7292 | 1.0000 | 1.0000 | 1.0000 |
+| prefer_set_latest | 8 | 0.7292 | 1.0000 | 1.0000 | 1.0000 |
+| linear | 2 | 1.0000 | 0.7292 | 0.7292 | 0.8542 |
+| linear | 4 | 1.0000 | 0.7292 | 0.7292 | 0.8542 |
+| linear | 8 | 1.0000 | 0.7292 | 0.7292 | 0.8542 |
+
+The learned selector still fails on NOTE authoritativeness across k, while prefer_set_latest stays perfect end-to-end.
+
+Authority filter baseline (RETRIEVAL_AUTHORITY_FILTER=1, linear rerank, s3q16):
+
+| k | selection_rate | accuracy_when_gold_present | value_acc | entailment |
+| --- | --- | --- | --- | --- |
+| 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| 4 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| 8 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+
+Authority filter stability (s5q24):
+
+| k | selection_rate | accuracy_when_gold_present | value_acc | entailment |
+| --- | --- | --- | --- | --- |
+| 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| 4 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| 8 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+
+With authority filtering, the selector becomes fully NOTE-robust across k.
+
+| preset | k | rerank | gold_present | selection_rate | accuracy_when_gold_present | value_acc | entailment |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| custom | 4 | prefer_set_latest | 1.0 | 0.5833 | 1.0 | 1.0 | 1.0 |
+| custom | 4 | prefer_update_latest | 1.0 | 0.5833 | 1.0 | 1.0 | 1.0 |
+| custom | 4 | linear | 1.0 | 0.9833 | 0.5667 | 0.5667 | 0.7250 |
+
 At s5q24, NOTE-aware deterministic policies remain perfect end-to-end, while the linear selector still loses accuracy and entailment despite near-perfect selection.
 
 KV selector bake-off (s5q24, k=4, same_key, shuffle):
@@ -620,6 +664,8 @@ KV selector bake-off (s5q24, k=4, same_key, shuffle):
 | latest_step | 1.0 | 1.0 | 0.9750 | 0.9750 | 0.9750 |
 | prefer_set_latest | 1.0 | 1.0 | 0.9750 | 0.9750 | 0.9750 |
 | linear | 1.0 | 1.0 | 0.9750 | 0.9750 | 0.9750 |
+
+![Compute vs quality (kv, s5q24)](docs/figures/compute_vs_quality_kv_s5q24.png)
 
 Multi-model check (kv, latest_step, s5q24):
 

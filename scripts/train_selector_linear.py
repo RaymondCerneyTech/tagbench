@@ -19,6 +19,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--lr", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--note-penalty", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -114,6 +115,8 @@ def main() -> int:
                     key=row.get("key", ""),
                 )
                 target = 1.0 if candidate.get("uid") == row.get("correct_uid") else 0.0
+                if args.note_penalty > 0.0 and str(candidate.get("op", "")).upper() == "NOTE":
+                    target = 0.0
                 error = probs[index] - target
                 for j, feat in enumerate(feats):
                     weights[j] -= args.lr * error * feat
@@ -133,6 +136,7 @@ def main() -> int:
             "seed": args.seed,
             "epochs": args.epochs,
             "lr": args.lr,
+            "note_penalty": args.note_penalty,
         },
     }
     args.out.write_text(json.dumps(payload, indent=2), encoding="utf-8")

@@ -7,6 +7,7 @@ from goldevidencebench.adapters.retrieval_llama_cpp_adapter import (
     _apply_drop_with_rng,
     _apply_order,
     _build_min_book,
+    _filter_authoritative,
     _latest_entry_for_key,
     _rerank_last_occurrence,
     _rerank_latest_step,
@@ -54,6 +55,23 @@ def test_build_min_book_contains_single_entry() -> None:
     ledger = parse_book_ledger(mini)
     assert len(ledger) == 1
     assert ledger[0]["uid"] == entry["uid"]
+
+def test_filter_authoritative_drops_notes() -> None:
+    entries = [
+        {"uid": "U000001", "step": 1, "op": "NOTE"},
+        {"uid": "U000002", "step": 2, "op": "SET"},
+    ]
+    filtered = _filter_authoritative(entries)
+    assert len(filtered) == 1
+    assert filtered[0]["uid"] == "U000002"
+
+    only_notes = [
+        {"uid": "U000010", "step": 5, "op": "NOTE"},
+        {"uid": "U000011", "step": 3, "op": "NOTE"},
+    ]
+    filtered = _filter_authoritative(only_notes)
+    assert len(filtered) == 2
+
 
 
 def test_select_entries_for_key_with_wrong_line() -> None:
