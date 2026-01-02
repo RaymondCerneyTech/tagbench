@@ -20,6 +20,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--note-penalty", type=float, default=0.0)
+    parser.add_argument("--wrong-update-penalty", type=float, default=0.0)
+    parser.add_argument("--spoof-penalty", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -60,6 +62,7 @@ def _score_candidates(
     for index, candidate in enumerate(candidates):
         feats = _linear_features(
             entry=candidate,
+            entries=candidates,
             index=index,
             total=len(candidates),
             max_step=max_step,
@@ -108,16 +111,23 @@ def main() -> int:
             for index, candidate in enumerate(candidates):
                 feats = _linear_features(
                     entry=candidate,
+                    entries=candidates,
                     index=index,
                     total=len(candidates),
                     max_step=max_step,
                     question=row.get("question", ""),
                     key=row.get("key", ""),
                 )
+                op = str(candidate.get("op", "")).upper()
                 target = 1.0 if candidate.get("uid") == row.get("correct_uid") else 0.0
-                if args.note_penalty > 0.0 and str(candidate.get("op", "")).upper() == "NOTE":
+                if args.note_penalty > 0.0 and op == "NOTE":
                     target = 0.0
-                error = probs[index] - target
+                weight = 1.0
+                if args.wrong_update_penalty > 0.0 and op != "NOTE" and candidate.get("uid") != row.get("correct_uid"):
+                    weight += args.wrong_update_penalty
+                if args.spoof_penalty > 0.0 and candidate.get("authority_spoofed"):
+                    weight += args.spoof_penalty
+                error = (probs[index] - target) * weight
                 for j, feat in enumerate(feats):
                     weights[j] -= args.lr * error * feat
 

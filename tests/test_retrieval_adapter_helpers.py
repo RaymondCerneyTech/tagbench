@@ -4,6 +4,7 @@ import random
 
 from goldevidencebench.adapters.retrieval_llama_cpp_adapter import (
     _LINEAR_FEATURE_ORDER,
+    _apply_authority_spoof,
     _apply_drop_with_rng,
     _apply_order,
     _build_min_book,
@@ -112,6 +113,20 @@ def test_select_entries_tfidf_prefers_query_match() -> None:
     assert any(entry["uid"] == "U000002" for entry in selected)
 
 
+
+
+def test_apply_authority_spoof_flips_ops() -> None:
+    entries = [
+        {"uid": "U000001", "step": 1, "op": "NOTE"},
+        {"uid": "U000002", "step": 2, "op": "SET"},
+        {"uid": "U000003", "step": 3, "op": "CLEAR"},
+    ]
+    rng = random.Random(123)
+    spoofed, count = _apply_authority_spoof(selected=entries, rate=1.0, rng=rng)
+    assert count == 3
+    assert spoofed[0]["op"] == "SET"
+    assert spoofed[1]["op"] == "NOTE"
+    assert spoofed[2]["op"] == "NOTE"
 
 
 def test_apply_drop_with_rng_removes_correct() -> None:

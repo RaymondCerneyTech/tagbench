@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from goldevidencebench import grade as grade_mod
-from goldevidencebench.baselines import parse_model_json_answer, parse_updates
+from goldevidencebench.baselines import parse_book_ledger, parse_model_json_answer, parse_updates
 from goldevidencebench.util import read_jsonl
 
 
@@ -124,6 +124,17 @@ def _norm_support_list(value: Any) -> list[str]:
     return [s] if s else []
 
 
+
+def _entry_value_for_uid(book: str | None, uid: str | None) -> str | None:
+    if not book or not uid:
+        return None
+    for entry in parse_book_ledger(book):
+        if entry.get("uid") == uid:
+            return _norm_value(entry.get("value"))
+    return None
+
+
+
 def _bucket_label(value: int, edges: list[int]) -> str:
     if not edges:
         return "all"
@@ -158,6 +169,21 @@ def _compute_decomposition(
     value_ok = 0
     selection_total = 0
     selection_ok = 0
+    gold_selected_total = 0
+    gold_selected_value_ok = 0
+    gold_selected_value_in_line_total = 0
+    gold_selected_value_in_line_ok = 0
+    support_consistency_total = 0
+    support_consistency_ok = 0
+    gold_support_selected_total = 0
+    gold_support_selected_ok = 0
+    selected_entry_total = 0
+    selected_note_ok = 0
+    selected_wrong_update_total = 0
+    selected_wrong_update_ok = 0
+    selected_spoof_total = 0
+    selected_spoof_ok = 0
+    selected_spoof_non_gold = 0
     for row in data_rows:
         rid = row.get("id")
         if not rid:
@@ -182,6 +208,43 @@ def _compute_decomposition(
             pred_supports = _norm_support_list(pred.get("support_ids") or pred.get("support_id"))
             if correct_uid in pred_supports:
                 selection_ok += 1
+                gold_selected_total += 1
+                if gold_value == pred_value:
+                    gold_selected_value_ok += 1
+                entry_value = _entry_value_for_uid(row.get("book"), correct_uid)
+                if entry_value is not None and pred_value is not None:
+                    gold_selected_value_in_line_total += 1
+                    if pred_value in entry_value:
+                        gold_selected_value_in_line_ok += 1
+            selected_uid = diag.get("selected_uid")
+            if selected_uid:
+                support_consistency_total += 1
+                if selected_uid in pred_supports:
+                    support_consistency_ok += 1
+            gold_uid = gold_supports[0] if gold_supports else None
+            if gold_uid:
+                gold_support_selected_total += 1
+                if gold_uid in pred_supports:
+                    gold_support_selected_ok += 1
+            selected_uid = diag.get("selected_uid")
+            if selected_uid:
+                selected_entry = next((e for e in parse_book_ledger(row.get("book") or "") if e.get("uid") == selected_uid), None)
+                if selected_entry:
+                    selected_entry_total += 1
+                    if str(selected_entry.get("op", "")).upper() == "NOTE":
+                        selected_note_ok += 1
+                    if gold_uid and selected_uid != gold_uid:
+                        selected_wrong_update_total += 1
+                        if str(selected_entry.get("op", "")).upper() != "NOTE":
+                            selected_wrong_update_ok += 1
+                if "selected_spoofed" in diag:
+                    selected_spoof_total += 1
+                    if diag.get("selected_spoofed") is True:
+                        selected_spoof_ok += 1
+                        if gold_uid and selected_uid and selected_uid != gold_uid:
+                            selected_spoof_non_gold += 1
+                        if gold_uid and selected_uid and selected_uid != gold_uid:
+                            selected_spoof_non_gold += 1
     gold_present_rate = included / total if total else 0.0
     acc_when = (value_ok / included) if included else 0.0
     selection_rate = (selection_ok / selection_total) if selection_total else None
@@ -189,6 +252,38 @@ def _compute_decomposition(
         "gold_present_rate": gold_present_rate,
         "accuracy_when_gold_present": acc_when,
         "selection_rate": selection_rate,
+        "answer_acc_given_gold_selected": (
+            gold_selected_value_ok / gold_selected_total if gold_selected_total else None
+        ),
+        "value_acc_when_gold_selected": (
+            gold_selected_value_ok / gold_selected_total if gold_selected_total else None
+        ),
+        "value_is_substring_of_selected_line_rate": (
+            gold_selected_value_in_line_ok / gold_selected_value_in_line_total
+            if gold_selected_value_in_line_total
+            else None
+        ),
+        "support_consistency_rate": (
+            support_consistency_ok / support_consistency_total if support_consistency_total else None
+        ),
+        "gold_support_selected_rate": (
+            gold_support_selected_ok / gold_support_selected_total if gold_support_selected_total else None
+        ),
+        "selected_note_rate": (
+            selected_note_ok / selected_entry_total if selected_entry_total else None
+        ),
+        "selected_wrong_update_rate": (
+            selected_wrong_update_ok / selected_wrong_update_total if selected_wrong_update_total else None
+        ),
+        "wrong_update_rate": (
+            selected_wrong_update_ok / selected_entry_total if selected_entry_total else None
+        ),
+        "spoof_accept_rate": (
+            selected_spoof_ok / selected_spoof_total if selected_spoof_total else None
+        ),
+        "spoof_accept_rate_non_gold": (
+            selected_spoof_non_gold / selected_entry_total if selected_entry_total else None
+        ),
     }
 
 
@@ -456,6 +551,21 @@ def main() -> int:
     gold_present_value_ok = 0
     selection_total = 0
     selection_ok = 0
+    gold_selected_total = 0
+    gold_selected_value_ok = 0
+    gold_selected_value_in_line_total = 0
+    gold_selected_value_in_line_ok = 0
+    support_consistency_total = 0
+    support_consistency_ok = 0
+    gold_support_selected_total = 0
+    gold_support_selected_ok = 0
+    selected_entry_total = 0
+    selected_note_ok = 0
+    selected_wrong_update_total = 0
+    selected_wrong_update_ok = 0
+    selected_spoof_total = 0
+    selected_spoof_ok = 0
+    selected_spoof_non_gold = 0
     decomp_rows: list[dict[str, Any]] = []
 
     recency_rows = []
@@ -496,6 +606,16 @@ def main() -> int:
                         "gold_present_rate": decomp["gold_present_rate"],
                         "selection_rate": decomp["selection_rate"],
                         "accuracy_when_gold_present": decomp["accuracy_when_gold_present"],
+                        "answer_acc_given_gold_selected": decomp.get("answer_acc_given_gold_selected"),
+                        "value_acc_when_gold_selected": decomp.get("value_acc_when_gold_selected"),
+                        "value_is_substring_of_selected_line_rate": decomp.get("value_is_substring_of_selected_line_rate"),
+                        "support_consistency_rate": decomp.get("support_consistency_rate"),
+                        "gold_support_selected_rate": decomp.get("gold_support_selected_rate"),
+                        "selected_note_rate": decomp.get("selected_note_rate"),
+                        "selected_wrong_update_rate": decomp.get("selected_wrong_update_rate"),
+                        "wrong_update_rate": decomp.get("wrong_update_rate"),
+                        "spoof_accept_rate": decomp.get("spoof_accept_rate"),
+                        "spoof_accept_rate_non_gold": decomp.get("spoof_accept_rate_non_gold"),
                         "overall_value_acc": metrics.get("value_acc"),
                         "overall_exact_acc": metrics.get("exact_acc"),
                         "overall_cite_f1": metrics.get("cite_f1"),
@@ -537,6 +657,39 @@ def main() -> int:
                 pred_supports = _norm_support_list(pred.get("support_ids") or pred.get("support_id"))
                 if correct_uid in pred_supports:
                     selection_ok += 1
+                    gold_selected_total += 1
+                    if gold_value == pred_value:
+                        gold_selected_value_ok += 1
+                    entry_value = _entry_value_for_uid(data_row.get("book"), correct_uid)
+                    if entry_value is not None and pred_value is not None:
+                        gold_selected_value_in_line_total += 1
+                        if pred_value in entry_value:
+                            gold_selected_value_in_line_ok += 1
+                selected_uid = diag.get("selected_uid")
+                if selected_uid:
+                    support_consistency_total += 1
+                    if selected_uid in pred_supports:
+                        support_consistency_ok += 1
+                gold_uid = gold_supports[0] if gold_supports else None
+                if gold_uid:
+                    gold_support_selected_total += 1
+                    if gold_uid in pred_supports:
+                        gold_support_selected_ok += 1
+                selected_uid = diag.get("selected_uid")
+                if selected_uid:
+                    selected_entry = next((e for e in parse_book_ledger(data_row.get("book") or "") if e.get("uid") == selected_uid), None)
+                    if selected_entry:
+                        selected_entry_total += 1
+                        if str(selected_entry.get("op", "")).upper() == "NOTE":
+                            selected_note_ok += 1
+                        if gold_uid and selected_uid != gold_uid:
+                            selected_wrong_update_total += 1
+                            if str(selected_entry.get("op", "")).upper() != "NOTE":
+                                selected_wrong_update_ok += 1
+                if "selected_spoofed" in diag:
+                    selected_spoof_total += 1
+                    if diag.get("selected_spoofed") is True:
+                        selected_spoof_ok += 1
         recency_rows.extend(
             _score_rows(
                 data_rows=data_rows,
@@ -555,6 +708,38 @@ def main() -> int:
         retrieval_summary["selection_rate"] = (selection_ok / selection_total) if selection_total else None
         if "gold_in_context_rate" in retrieval_summary:
             retrieval_summary["gold_present_rate"] = retrieval_summary["gold_in_context_rate"]
+        retrieval_summary["answer_acc_given_gold_selected"] = (
+            gold_selected_value_ok / gold_selected_total if gold_selected_total else None
+        )
+        retrieval_summary["value_acc_when_gold_selected"] = (
+            gold_selected_value_ok / gold_selected_total if gold_selected_total else None
+        )
+        retrieval_summary["value_is_substring_of_selected_line_rate"] = (
+            gold_selected_value_in_line_ok / gold_selected_value_in_line_total
+            if gold_selected_value_in_line_total
+            else None
+        )
+        retrieval_summary["support_consistency_rate"] = (
+            support_consistency_ok / support_consistency_total if support_consistency_total else None
+        )
+        retrieval_summary["gold_support_selected_rate"] = (
+            gold_support_selected_ok / gold_support_selected_total if gold_support_selected_total else None
+        )
+        retrieval_summary["selected_note_rate"] = (
+            selected_note_ok / selected_entry_total if selected_entry_total else None
+        )
+        retrieval_summary["selected_wrong_update_rate"] = (
+            selected_wrong_update_ok / selected_wrong_update_total if selected_wrong_update_total else None
+        )
+        retrieval_summary["wrong_update_rate"] = (
+            selected_wrong_update_ok / selected_entry_total if selected_entry_total else None
+        )
+        retrieval_summary["spoof_accept_rate"] = (
+            selected_spoof_ok / selected_spoof_total if selected_spoof_total else None
+        )
+        retrieval_summary["spoof_accept_rate_non_gold"] = (
+            selected_spoof_non_gold / selected_entry_total if selected_entry_total else None
+        )
         overall_acc = summary.get("overall", {}).get("value_acc_mean")
         gold_rate = retrieval_summary.get("gold_present_rate")
         sel_rate = retrieval_summary.get("selection_rate")

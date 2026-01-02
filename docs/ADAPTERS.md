@@ -25,6 +25,8 @@ Set `GOLDEVIDENCEBENCH_RETRIEVAL_K` to include top-k latest entries for the key 
 testing. Use `GOLDEVIDENCEBENCH_RETRIEVAL_INCLUDE_CLEAR=0` to skip CLEAR entries.
 Use `GOLDEVIDENCEBENCH_RETRIEVAL_DROP_PROB` (0-1) to probabilistically drop the correct line, and
 `GOLDEVIDENCEBENCH_RETRIEVAL_DROP_SEED` to make the drop deterministic by row id.
+Use `GOLDEVIDENCEBENCH_RETRIEVAL_AUTHORITY_SPOOF_RATE` (0-1) to flip NOTE/UPDATE labels in the candidate set, and
+`GOLDEVIDENCEBENCH_RETRIEVAL_AUTHORITY_SPOOF_SEED` for deterministic spoofing by row id.
 Use `GOLDEVIDENCEBENCH_RETRIEVAL_ORDER=shuffle|gold_first|gold_middle|gold_last` (and optional
 `GOLDEVIDENCEBENCH_RETRIEVAL_ORDER_SEED`) to control ordering and test positional bias under ambiguity.
 Set `GOLDEVIDENCEBENCH_RETRIEVAL_QUERY_SANDWICH=1` to repeat the question before and after the

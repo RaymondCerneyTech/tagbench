@@ -151,67 +151,8 @@ Train with NOTE candidates present, but label the gold UPDATE as correct using `
 
 **V3-B: Authority spoofing (untrusted authority signal)**
 
-- Add a stress profile where some NOTE lines look like UPDATEs, or UPDATE lines contain NOTE text, or the authority marker is missing/ambiguous.
+- Add a stress profile where some NOTE lines look like UPDATEs, or UPDATE lines contain ?NOTE:? text, or the authority marker is missing/ambiguous.
 - Measure how often the selector is tricked and whether abstain triggers when authority is unclear.
-- Report spoof_accept_rate + gold_support_selected_rate.
-
-Command (s3q16 example, spoof cues at 30%):
-
-```powershell
-Remove-Item Env:\GOLDEVIDENCEBENCH_RETRIEVAL_AUTHORITY_FILTER -ErrorAction SilentlyContinue
-$env:GOLDEVIDENCEBENCH_RETRIEVAL_AUTHORITY_SPOOF_RATE = "0.3"
-$env:GOLDEVIDENCEBENCH_RETRIEVAL_AUTHORITY_SPOOF_SEED = "0"
-$env:GOLDEVIDENCEBENCH_RETRIEVAL_RERANK = "linear"
-$env:GOLDEVIDENCEBENCH_RETRIEVAL_K = "4"
-$outDir = "runs\authority_spoof_0.3_linear_k4_s3q16"
-goldevidencebench sweep --out $outDir --seeds 3 --episodes 1 --steps 240 --queries 16 `
-  --state-modes kv_commentary --distractor-profiles standard `
-  --adapter goldevidencebench.adapters.retrieval_llama_cpp_adapter:create_adapter --no-derived-queries `
-  --no-twins --require-citations --results-json "$outDir\combined.json" `
-  --max-book-tokens 400 --note-rate 0.30
-python .\scripts\summarize_results.py --in "$outDir\combined.json" --out-json "$outDir\summary.json"
-```
-
-V3-B authority spoofing results (s3q16, k=4, gold_present_rate = 1.0):
-
-| spoof_rate | value_acc | selection_rate | gold_support_selected_rate | selected_note_rate | wrong_update_rate | spoof_accept_rate |
-| --- | --- | --- | --- | --- | --- | --- |
-| 0.1 | 0.7708 | 0.6042 | 0.7708 | 0.0833 | 0.1458 | 0.0833 |
-| 0.5 | 0.4375 | 0.4375 | 0.4375 | 0.2500 | 0.3125 | 0.2708 |
-
-Runs: runs/authority_spoof_0.1_linear_k4_s3q16, runs/authority_spoof_0.5_linear_k4_s3q16.
-
-Interpretation: higher spoofing raises spoof_accept_rate and wrong_update_rate, and accuracy tracks the resulting selection collapse.
-
-V3-B spoof filter A/B (prefer_update_latest, spoof_rate=0.5, s3q16, k=4):
-
-| authority_filter | value_acc | selection_rate | gold_support_selected_rate | selected_note_rate | wrong_update_rate | spoof_accept_rate |
-| --- | --- | --- | --- | --- | --- | --- |
-| off | 0.2708 | 0.4167 | 0.2708 | 0.3750 | 0.3542 | 0.3958 |
-| on | 0.3125 | 0.3125 | 0.3125 | 0.0000 | 0.6875 | 0.0625 |
-
-Interpretation: the filter eliminates NOTE picks and sharply lowers spoof acceptance; remaining errors are almost entirely wrong UPDATE selection.
-
-Takeaway: with spoofing, authority filtering solves NOTE/spoof confusion but exposes the next bottleneck (wrong UPDATE selection).
-
-Selector training under spoofing (optional): export with `--authority-spoof-rate`/`--authority-spoof-seed` and train with `--spoof-penalty` to penalize spoofed candidates. This can be combined with `--hard-negatives` for wrong?UPDATE pressure.
-
-V3-B order generalization (v8: spoofpen+hardneg, filter ON, spoof_rate=0.5, k=4, s3q16):
-
-| order | value_acc | selection_rate | gold_support_selected_rate | wrong_update_rate | spoof_accept_rate | spoof_accept_rate_non_gold |
-| --- | --- | --- | --- | --- | --- | --- |
-| gold_first | 1.0000 | 1.0000 | 1.0000 | 0.0000 | 0.3125 | 0.0000 |
-| gold_middle | 1.0000 | 1.0000 | 1.0000 | 0.0000 | 0.5000 | 0.0000 |
-| gold_last | 1.0000 | 1.0000 | 1.0000 | 0.0000 | 0.4375 | 0.0000 |
-| shuffle | 1.0000 | 1.0000 | 1.0000 | 0.0000 | 0.5000 | 0.0000 |
-
-Runs: runs/authority_spoof_0.5_filter1_linear_spoofpen_hardneg_{gold_first,gold_middle,gold_last,shuffle}_k4_s3q16.
-
-Interpretation: accuracy is order-invariant and spoof exposure does not cause wrong picks (spoof_accept_rate_non_gold = 0).
-
-
-
-
 
 **V3-C: Answer contract (extraction clamp)**
 
@@ -259,8 +200,6 @@ New extraction diagnostics (in summary.json / summary_all.csv):
 - selected_note_rate: share of predictions that cite a NOTE line.
 - selected_wrong_update_rate: share of non-gold selections that are UPDATEs (conditional rate).
 - wrong_update_rate: share of all selections that are non-gold UPDATEs (overall rate).
-- spoof_accept_rate: share of selections that cite a spoofed NOTE/UPDATE line (V3-B).
-- spoof_accept_rate_non_gold: share of selections that are spoofed *and* non-gold (direct spoof-caused errors).
 
 ## Monitor research questions (V3 focus)
 

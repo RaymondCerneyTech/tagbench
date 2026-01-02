@@ -22,10 +22,13 @@ class RetrievalConfig:
     retriever_mode: str = "key"  # key|bm25|tfidf
     drop_prob: float = 0.0
     drop_seed: int = 0
+    authority_spoof_rate: float = 0.0
+    authority_spoof_seed: int = 0
     order: str = "shuffle"  # shuffle|gold_first|gold_middle|gold_last
     order_seed: int = 0
     query_sandwich: bool = False
     pick_then_answer: bool = False
+    deterministic_answerer: bool = False
     rerank_mode: str = "none"  # none|latest_step|last_occurrence|prefer_set_latest|prefer_update_latest|linear
     selection_only: bool = False
     authority_filter: bool = False
@@ -41,6 +44,8 @@ _LINEAR_FEATURE_ORDER = [
     "bias",
     "step_norm",
     "step_delta_norm",
+    "is_latest_step",
+    "recency_rank_norm",
     "pos_norm",
     "is_set",
     "is_clear",
@@ -125,6 +130,29 @@ def _apply_drop_with_rng(
     if not remaining and wrong_entry is not None:
         remaining = [wrong_entry]
     return remaining, True
+
+
+
+def _apply_authority_spoof(
+    *, selected: list[dict[str, Any]], rate: float, rng: random.Random
+) -> tuple[list[dict[str, Any]], int]:
+    if not selected or rate <= 0.0:
+        return selected, 0
+    spoofed: list[dict[str, Any]] = []
+    spoofed_count = 0
+    for entry in selected:
+        if rng.random() < rate:
+            spoofed_count += 1
+            spoofed_entry = dict(entry)
+            op = str(entry.get("op", "")).upper()
+            spoofed_entry["op"] = "SET" if op == "NOTE" else "NOTE"
+            spoofed_entry["authority_spoofed"] = True
+            spoofed.append(spoofed_entry)
+        else:
+            clean_entry = dict(entry)
+            clean_entry["authority_spoofed"] = False
+            spoofed.append(clean_entry)
+    return spoofed, spoofed_count
 
 
 def _apply_order(
@@ -305,6 +333,7 @@ def _select_entries_tfidf(
 def _linear_features(
     *,
     entry: dict[str, Any],
+    entries: list[dict[str, Any]],
     index: int,
     total: int,
     max_step: int,
@@ -314,6 +343,12 @@ def _linear_features(
     step = int(entry.get("step", 0))
     step_norm = step / max_step if max_step else 0.0
     step_delta_norm = ((max_step - step) / max_step) if max_step else 0.0
+    is_latest_step = 1.0 if step == max_step else 0.0
+    recency_rank = 0
+    for other in entries:
+        if int(other.get("step", 0)) > step:
+            recency_rank += 1
+    recency_rank_norm = recency_rank / (total - 1) if total > 1 else 0.0
     pos_norm = index / (total - 1) if total > 1 else 0.0
     op = str(entry.get("op", "")).upper()
     question_lower = (question or "").lower()
@@ -335,6 +370,8 @@ def _linear_features(
         1.0,
         step_norm,
         step_delta_norm,
+        is_latest_step,
+        recency_rank_norm,
         pos_norm,
         1.0 if op == "SET" else 0.0,
         1.0 if op == "CLEAR" else 0.0,
@@ -363,6 +400,7 @@ def _rerank_linear(
     for index, entry in enumerate(entries):
         features = _linear_features(
             entry=entry,
+            entries=entries,
             index=index,
             total=len(entries),
             max_step=max_step,
@@ -474,11 +512,14 @@ class RetrievalLlamaCppAdapter:
         wrong_type = get_env("RETRIEVAL_WRONG_TYPE", "none").strip().lower()
         drop_env = get_env("RETRIEVAL_DROP_PROB", "0").strip()
         drop_seed_env = get_env("RETRIEVAL_DROP_SEED", "0").strip()
+        authority_spoof_rate_env = get_env("RETRIEVAL_AUTHORITY_SPOOF_RATE", "0").strip()
+        authority_spoof_seed_env = get_env("RETRIEVAL_AUTHORITY_SPOOF_SEED", "0").strip()
         order_env = get_env("RETRIEVAL_ORDER", "shuffle").strip().lower()
         order_seed_env = get_env("RETRIEVAL_ORDER_SEED", "0").strip()
         retriever_env = get_env("RETRIEVAL_RETRIEVER", "key").strip().lower()
         sandwich_env = get_env("RETRIEVAL_QUERY_SANDWICH", "0").strip().lower()
         pick_env = get_env("RETRIEVAL_PICK_THEN_ANSWER", "0").strip().lower()
+        deterministic_env = get_env("RETRIEVAL_DETERMINISTIC_ANSWER", "0").strip().lower()
         rerank_env = get_env("RETRIEVAL_RERANK", "none").strip().lower()
         selection_only_env = get_env("RETRIEVAL_SELECTOR_ONLY", "0").strip().lower()
         authority_filter_env = get_env("RETRIEVAL_AUTHORITY_FILTER", "0").strip().lower()
@@ -495,6 +536,14 @@ class RetrievalLlamaCppAdapter:
             drop_seed = int(drop_seed_env)
         except ValueError:
             drop_seed = 0
+        try:
+            authority_spoof_rate = float(authority_spoof_rate_env)
+        except ValueError:
+            authority_spoof_rate = 0.0
+        try:
+            authority_spoof_seed = int(authority_spoof_seed_env)
+        except ValueError:
+            authority_spoof_seed = 0
         if order_env not in {"shuffle", "gold_first", "gold_middle", "gold_last"}:
             order_env = "shuffle"
         if retriever_env not in {"key", "bm25", "tfidf"}:
@@ -510,10 +559,13 @@ class RetrievalLlamaCppAdapter:
             retriever_mode=retriever_env,
             drop_prob=max(0.0, min(1.0, drop_prob)),
             drop_seed=drop_seed,
+            authority_spoof_rate=max(0.0, min(1.0, authority_spoof_rate)),
+            authority_spoof_seed=authority_spoof_seed,
             order=order_env,
             order_seed=order_seed,
             query_sandwich=sandwich_env in {"1", "true", "yes"},
             pick_then_answer=pick_env in {"1", "true", "yes"},
+            deterministic_answerer=deterministic_env in {"1", "true", "yes"},
             rerank_mode=(
                 rerank_env
                 if rerank_env
@@ -531,10 +583,13 @@ class RetrievalLlamaCppAdapter:
                 retriever_mode=self.cfg.retriever_mode,
                 drop_prob=self.cfg.drop_prob,
                 drop_seed=self.cfg.drop_seed,
+                authority_spoof_rate=self.cfg.authority_spoof_rate,
+                authority_spoof_seed=self.cfg.authority_spoof_seed,
                 order=self.cfg.order,
                 order_seed=self.cfg.order_seed,
                 query_sandwich=self.cfg.query_sandwich,
                 pick_then_answer=False,
+                deterministic_answerer=False,
                 rerank_mode=self.cfg.rerank_mode,
                 selection_only=True,
                 authority_filter=self.cfg.authority_filter,
@@ -621,6 +676,12 @@ class RetrievalLlamaCppAdapter:
             selected, order_applied = _apply_order(
                 selected=selected, correct_uid=diag.get("correct_uid"), order=self.cfg.order
             )
+        spoofed_count = 0
+        if self.cfg.authority_spoof_rate > 0.0 and selected:
+            spoof_rng = random.Random(self.cfg.authority_spoof_seed ^ hash(row.get("id", "")))
+            selected, spoofed_count = _apply_authority_spoof(
+                selected=selected, rate=self.cfg.authority_spoof_rate, rng=spoof_rng
+            )
         self._last_diag = {
             "id": row.get("id"),
             "key": key,
@@ -628,6 +689,8 @@ class RetrievalLlamaCppAdapter:
             "drop_prob": self.cfg.drop_prob,
             "dropped_correct": dropped,
             "order": order_applied,
+            "authority_spoof_rate": self.cfg.authority_spoof_rate,
+            "authority_spoof_count": spoofed_count,
         }
         if not selected:
             return self._empty_output()
@@ -659,6 +722,15 @@ class RetrievalLlamaCppAdapter:
                 **(self._last_diag or {}),
                 "rerank_mode": "none",
                 "reranked_uid": chosen.get("uid") if chosen else None,
+            }
+        if self._last_diag is not None:
+            selected_spoofed = None
+            if chosen is not None and "authority_spoofed" in chosen:
+                selected_spoofed = bool(chosen.get("authority_spoofed"))
+            self._last_diag = {
+                **self._last_diag,
+                "selected_uid": chosen.get("uid") if chosen else None,
+                "selected_spoofed": selected_spoofed,
             }
         support_ids = [chosen["uid"]] if chosen else []
         return {"value": "", "support_ids": support_ids}
@@ -713,6 +785,12 @@ class RetrievalLlamaCppAdapter:
             selected, order_applied = _apply_order(
                 selected=selected, correct_uid=diag.get("correct_uid"), order=self.cfg.order
             )
+        spoofed_count = 0
+        if self.cfg.authority_spoof_rate > 0.0 and selected:
+            spoof_rng = random.Random(self.cfg.authority_spoof_seed ^ hash(row.get("id", "")))
+            selected, spoofed_count = _apply_authority_spoof(
+                selected=selected, rate=self.cfg.authority_spoof_rate, rng=spoof_rng
+            )
         self._last_diag = {
             "id": row.get("id"),
             "key": key,
@@ -720,14 +798,18 @@ class RetrievalLlamaCppAdapter:
             "drop_prob": self.cfg.drop_prob,
             "dropped_correct": dropped,
             "order": order_applied,
+            "authority_spoof_rate": self.cfg.authority_spoof_rate,
+            "authority_spoof_count": spoofed_count,
         }
         if not selected:
             return self._answerer.predict(row, protocol=protocol)
+        selected_entry: dict[str, Any] | None = None
         if len(selected) == 1:
             entry = selected[0]
             if entry.get("op") == "CLEAR" and not self.cfg.include_clear:
                 return self._answerer.predict(row, protocol=protocol)
             mini_book = _build_min_book(entry=entry, key=key, episode_id=row.get("episode_id", "E0000"))
+            selected_entry = entry
         else:
             mini_book = _build_multi_book(entries=selected, episode_id=row.get("episode_id", "E0000"))
         if self.cfg.rerank_mode != "none":
@@ -758,6 +840,7 @@ class RetrievalLlamaCppAdapter:
                     key=chosen["key"],
                     episode_id=row.get("episode_id", "E0000"),
                 )
+                selected_entry = chosen
         elif self.cfg.pick_then_answer and len(selected) > 1:
             ledger = extract_ledger(mini_book)
             ledger = truncate_tokens(
@@ -792,6 +875,26 @@ class RetrievalLlamaCppAdapter:
                         key=chosen_entry["key"],
                         episode_id=row.get("episode_id", "E0000"),
                     )
+                    selected_entry = chosen_entry
+        if self._last_diag is not None:
+            try:
+                answer_entries = parse_book_ledger(mini_book)
+            except Exception:
+                answer_entries = []
+            selected_spoofed = None
+            if selected_entry is not None and "authority_spoofed" in selected_entry:
+                selected_spoofed = bool(selected_entry.get("authority_spoofed"))
+            self._last_diag = {
+                **self._last_diag,
+                "answer_ledger_entries": len(answer_entries),
+                "selected_uid": selected_entry.get("uid") if selected_entry else None,
+                "selected_spoofed": selected_spoofed,
+            }
+        if self.cfg.deterministic_answerer and selected_entry is not None:
+            if self._last_diag is not None:
+                self._last_diag = {**self._last_diag, "deterministic_answerer": True}
+            value = selected_entry.get("value")
+            return {"value": value, "support_ids": [selected_entry["uid"]]}
         row_for_adapter = {**row, "book": mini_book}
         return self._answerer.predict(row_for_adapter, protocol=protocol)
 

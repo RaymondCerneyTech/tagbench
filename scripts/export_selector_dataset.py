@@ -7,6 +7,7 @@ from pathlib import Path
 
 from goldevidencebench.baselines import parse_book_ledger
 from goldevidencebench.adapters.retrieval_llama_cpp_adapter import (
+    _apply_authority_spoof,
     _apply_drop_with_rng,
     _apply_order,
     _select_entries_for_key,
@@ -23,8 +24,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--order-seed", type=int, default=0)
     parser.add_argument("--drop-prob", type=float, default=0.0)
     parser.add_argument("--drop-seed", type=int, default=0)
+    parser.add_argument("--authority-spoof-rate", type=float, default=0.0)
+    parser.add_argument("--authority-spoof-seed", type=int, default=0)
     parser.add_argument("--include-clear", action="store_true")
     parser.add_argument("--authoritative-only", action="store_true")
+    parser.add_argument("--use-gold-support", action="store_true")
+    parser.add_argument("--hard-negatives", action="store_true")
     parser.add_argument("--limit", type=int, default=0)
     return parser.parse_args()
 
@@ -58,6 +63,12 @@ def main() -> int:
             key = meta.get("key")
             if not key:
                 continue
+            gold = row.get("gold") or {}
+            gold_supports = gold.get("support_ids") or gold.get("support_id") or []
+            if isinstance(gold_supports, list):
+                gold_uid = gold_supports[0] if gold_supports else None
+            else:
+                gold_uid = str(gold_supports) if gold_supports else None
             book = row.get("book") or row.get("artifact")
             if not book:
                 continue
@@ -68,10 +79,21 @@ def main() -> int:
             selected, diag, wrong_entry = _select_entries_for_key(
                 entries=entries, key=key, k=max(1, args.k), wrong_type=args.wrong_type
             )
+            if args.hard_negatives and len(selected) > 1:
+                # Promote near-latest non-gold UPDATEs to the front of the candidate list
+                def _is_non_gold_update(entry: dict[str, object]) -> bool:
+                    return entry.get("uid") != gold_uid and str(entry.get("op", "")).upper() != "NOTE"
+                def _step(entry: dict[str, object]) -> int:
+                    return int(entry.get("step", 0))
+                def _rank(entry: dict[str, object]) -> tuple[int, int]:
+                    # Non-gold UPDATEs first, then by recency (higher step)
+                    return (0 if _is_non_gold_update(entry) else 1, -_step(entry))
+                selected = sorted(selected, key=_rank)
+            correct_uid = gold_uid if args.use_gold_support else diag.get("correct_uid")
             rng = random.Random(args.drop_seed ^ hash(row.get("id", "")))
             selected, dropped = _apply_drop_with_rng(
                 selected=selected,
-                correct_uid=diag.get("correct_uid"),
+                correct_uid=correct_uid,
                 wrong_entry=wrong_entry,
                 drop_prob=max(0.0, min(1.0, args.drop_prob)),
                 rng=rng,
@@ -84,9 +106,16 @@ def main() -> int:
             elif args.order in {"gold_first", "gold_middle", "gold_last"} and selected:
                 selected, order_applied = _apply_order(
                     selected=selected,
-                    correct_uid=diag.get("correct_uid"),
+                    correct_uid=correct_uid,
                     order=args.order,
                 )
+            if args.authority_spoof_rate > 0.0:
+                spoof_rng = random.Random(args.authority_spoof_seed ^ hash(row.get("id", "")))
+                selected, _ = _apply_authority_spoof(selected=selected, rate=args.authority_spoof_rate, rng=spoof_rng)
+
+            gold_present = bool(correct_uid) and any(
+                entry.get("uid") == correct_uid for entry in selected
+            ) and not dropped
 
             record = {
                 "id": row.get("id"),
@@ -97,8 +126,9 @@ def main() -> int:
                 "wrong_type": args.wrong_type,
                 "drop_prob": args.drop_prob,
                 "order": order_applied,
-                "correct_uid": diag.get("correct_uid"),
-                "gold_present": diag.get("correct_included") and not dropped,
+                "correct_uid": correct_uid,
+                "gold_support_uid": gold_uid,
+                "gold_present": gold_present,
                 "candidates": [
                     {
                         "uid": entry.get("uid"),
@@ -106,6 +136,7 @@ def main() -> int:
                         "op": entry.get("op"),
                         "key": entry.get("key"),
                         "value": entry.get("value"),
+                        "authority_spoofed": bool(entry.get("authority_spoofed")),
                     }
                     for entry in selected
                 ],
