@@ -12,8 +12,14 @@ from goldevidencebench.baselines import iter_predictions, parse_model_json_answe
 from goldevidencebench.generate import EpisodeConfig, generate_dataset
 from goldevidencebench.grade import grade_rows
 from goldevidencebench.model_runner import load_adapter, run_adapter
-from goldevidencebench.ui_eval import score_post_action_verification, score_ui_rows
+from goldevidencebench.ui_eval import (
+    score_post_action_verification,
+    score_ui_rows,
+    score_ui_sequences,
+)
 from goldevidencebench.ui_fixture import validate_ui_fixture_path
+from goldevidencebench.ui_generate import generate_popup_overlay_fixture, generate_same_label_fixture
+from goldevidencebench.ui_summary import summarize_ui_rows
 from goldevidencebench.util import get_env, read_jsonl, write_jsonl
 
 
@@ -55,6 +61,10 @@ def _print_report(res, prefix: str = "", eff: dict[str, Any] | None = None) -> N
         print(f" instr_gap={res.instruction_gap:.3f}", end="")
     if res.instr_override_rate is not None:
         print(f" instr_override={res.instr_override_rate:.3f}", end="")
+    if res.instr_conflict_present_rate is not None:
+        print(f" instr_conflict={res.instr_conflict_present_rate:.3f}", end="")
+    if res.instr_conflict_present_count is not None:
+        print(f" instr_conflict_n={res.instr_conflict_present_count}", end="")
     if res.state_integrity_rate is not None:
         print(f" state_integrity={res.state_integrity_rate:.3f}", end="")
     if eff:
@@ -210,6 +220,8 @@ def _cmd_model(ns: argparse.Namespace) -> int:
                 "instruction_acc": res.instruction_acc,
                 "instruction_gap": res.instruction_gap,
                 "instr_override_rate": res.instr_override_rate,
+                "instr_conflict_present_rate": res.instr_conflict_present_rate,
+                "instr_conflict_present_count": res.instr_conflict_present_count,
                 "state_integrity_rate": res.state_integrity_rate,
             },
             "metrics_raw": None,
@@ -230,6 +242,8 @@ def _cmd_model(ns: argparse.Namespace) -> int:
                 "instruction_acc": raw_res.instruction_acc,
                 "instruction_gap": raw_res.instruction_gap,
                 "instr_override_rate": raw_res.instr_override_rate,
+                "instr_conflict_present_rate": raw_res.instr_conflict_present_rate,
+                "instr_conflict_present_count": raw_res.instr_conflict_present_count,
                 "state_integrity_rate": raw_res.state_integrity_rate,
             }
         Path(ns.results_json).write_text(json.dumps(results_payload, indent=2), encoding="utf-8")
@@ -278,6 +292,7 @@ def _cmd_ui_score(ns: argparse.Namespace) -> int:
             selected_ids.append(None)
 
     metrics = score_ui_rows(rows, selected_ids)
+    observed_deltas = None
     if ns.observed:
         observed_path = Path(ns.observed)
         if not observed_path.exists():
@@ -286,7 +301,61 @@ def _cmd_ui_score(ns: argparse.Namespace) -> int:
         observed_deltas = _load_observed_deltas(observed_path, rows)
         metrics.update(score_post_action_verification(rows, observed_deltas))
 
-    payload = {"rows": len(rows), "adapter": ns.adapter, "metrics": metrics}
+    sequence_metrics = score_ui_sequences(rows, selected_ids, observed_deltas)
+    payload = {
+        "rows": len(rows),
+        "adapter": ns.adapter,
+        "metrics": metrics,
+        "sequence_metrics": sequence_metrics,
+    }
+    if ns.out:
+        Path(ns.out).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
+def _cmd_ui_generate(ns: argparse.Namespace) -> int:
+    labels = [label.strip() for label in ns.labels.split(",") if label.strip()]
+    profile = getattr(ns, "profile", "same_label")
+    overlay_duplicates = getattr(ns, "overlay_duplicates", 1)
+    if profile == "popup_overlay":
+        rows = generate_popup_overlay_fixture(
+            steps=ns.steps,
+            base_duplicates=ns.duplicates,
+            overlay_duplicates=overlay_duplicates,
+            labels=labels,
+            seed=ns.seed,
+            app_path_prefix=ns.app_path_prefix,
+        )
+    else:
+        rows = generate_same_label_fixture(
+            steps=ns.steps,
+            duplicates=ns.duplicates,
+            labels=labels,
+            seed=ns.seed,
+            app_path_prefix=ns.app_path_prefix,
+        )
+    write_jsonl(ns.out, rows)
+    print(f"Wrote {len(rows)} rows to {ns.out}")
+    return 0
+
+
+def _cmd_ui_summary(ns: argparse.Namespace) -> int:
+    fixture_path = Path(ns.fixture)
+    if not fixture_path.exists():
+        print(f"Fixture not found: {fixture_path}")
+        return 1
+
+    errors = validate_ui_fixture_path(fixture_path)
+    if errors:
+        print("Fixture validation failed:")
+        for error in errors:
+            print(f"- {error}")
+        return 1
+
+    rows = list(read_jsonl(fixture_path))
+    metrics = summarize_ui_rows(rows)
+    payload = {"rows": len(rows), "metrics": metrics}
     if ns.out:
         Path(ns.out).write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps(payload, indent=2))
@@ -341,6 +410,10 @@ def _cmd_run(ns: argparse.Namespace) -> int:
                 "twin_flip_rate": res.twin_flip_rate,
                 "instruction_acc": res.instruction_acc,
                 "instruction_gap": res.instruction_gap,
+                "instr_override_rate": res.instr_override_rate,
+                "instr_conflict_present_rate": res.instr_conflict_present_rate,
+                "instr_conflict_present_count": res.instr_conflict_present_count,
+                "state_integrity_rate": res.state_integrity_rate,
             },
             "efficiency": eff,
             "artifact_stats": [],
@@ -515,6 +588,8 @@ def _cmd_sweep(ns: argparse.Namespace) -> int:
                                 "instruction_acc": res.instruction_acc,
                                 "instruction_gap": res.instruction_gap,
                                 "instr_override_rate": res.instr_override_rate,
+                                "instr_conflict_present_rate": res.instr_conflict_present_rate,
+                                "instr_conflict_present_count": res.instr_conflict_present_count,
                                 "state_integrity_rate": res.state_integrity_rate,
                             },
                             "metrics_raw": None,
@@ -535,6 +610,8 @@ def _cmd_sweep(ns: argparse.Namespace) -> int:
                                 "instruction_acc": raw_res.instruction_acc,
                                 "instruction_gap": raw_res.instruction_gap,
                                 "instr_override_rate": raw_res.instr_override_rate,
+                                "instr_conflict_present_rate": raw_res.instr_conflict_present_rate,
+                                "instr_conflict_present_count": raw_res.instr_conflict_present_count,
                                 "state_integrity_rate": raw_res.state_integrity_rate,
                             }
                         results.append(payload)
@@ -686,6 +763,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ui.add_argument("--out", type=Path, default=None, help="Optional JSON output path.")
     ui.set_defaults(func=_cmd_ui_score)
+
+    ug = sub.add_parser("ui-generate", help="Generate a UI fixture (JSONL).")
+    ug.add_argument("--out", required=True, type=Path, help="Output JSONL path.")
+    ug.add_argument(
+        "--profile",
+        choices=["same_label", "popup_overlay"],
+        default="same_label",
+        help="Fixture profile to generate.",
+    )
+    ug.add_argument("--steps", type=int, default=3)
+    ug.add_argument("--duplicates", type=int, default=2)
+    ug.add_argument("--overlay-duplicates", type=int, default=1)
+    ug.add_argument(
+        "--labels",
+        type=str,
+        default="Next,Continue,Save",
+        help="Comma-separated labels to sample from.",
+    )
+    ug.add_argument("--seed", type=int, default=0)
+    ug.add_argument("--app-path-prefix", type=str, default="UI Flow")
+    ug.set_defaults(func=_cmd_ui_generate)
+
+    us = sub.add_parser("ui-summary", help="Summarize a UI fixture (JSONL).")
+    us.add_argument("--fixture", type=Path, required=True, help="UI fixture JSONL path.")
+    us.add_argument("--out", type=Path, default=None, help="Optional JSON output path.")
+    us.set_defaults(func=_cmd_ui_summary)
 
     s = sub.add_parser("sweep", help="Run a small sweep over seeds/state_modes/distractors.")
     s.add_argument("--out", required=True, type=Path, help="Output directory for sweep runs.")

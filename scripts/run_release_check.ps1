@@ -31,5 +31,11 @@ if ($RunSweeps) {
 }
 
 if (-not $SkipThresholds) {
+    Write-Host "Running instruction override gate..."
+    .\scripts\run_instruction_override_gate.ps1 -ModelPath $ModelPath
+    Write-Host "Running UI same_label stub..."
+    .\scripts\run_ui_same_label_stub.ps1
+    Write-Host "Running UI popup_overlay stub..."
+    .\scripts\run_ui_popup_overlay_stub.ps1
     python .\scripts\check_thresholds.py --config .\configs\usecase_checks.json
 }

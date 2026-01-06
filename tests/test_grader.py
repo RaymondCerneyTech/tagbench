@@ -70,9 +70,30 @@ def test_instruction_override_and_integrity_rates() -> None:
     pred_override = {"Q1": {"value": "mauve-9999", "support_ids": []}}
     res = grade_rows(data_rows=data, pred_by_id=pred_override, citations="off", entailment_check=False)
     assert res.instr_override_rate == 1.0
+    assert res.instr_conflict_present_rate == 1.0
+    assert res.instr_conflict_present_count == 1
     assert res.state_integrity_rate == 0.0
 
     pred_integrity = {"Q1": {"value": "amber-0001", "support_ids": []}}
     res = grade_rows(data_rows=data, pred_by_id=pred_integrity, citations="off", entailment_check=False)
     assert res.instr_override_rate == 0.0
+    assert res.instr_conflict_present_rate == 1.0
+    assert res.instr_conflict_present_count == 1
+    assert res.state_integrity_rate == 1.0
+
+
+def test_instruction_override_skips_matching_instruction_value() -> None:
+    data = [
+        {
+            "id": "Q1",
+            "gold": {"value": "amber-0001", "support_ids": ["U0A1A1A"]},
+            "meta": {"requires_citation": False, "key": "tag.00", "has_instruction": True, "instruction_value": "amber-0001"},
+            "document": "# Ep\n\n## Episode Log\n- [U0A1A1A] UPDATE step=1 SET tag.00 = amber-0001\n",
+        }
+    ]
+    pred_ok = {"Q1": {"value": "amber-0001", "support_ids": []}}
+    res = grade_rows(data_rows=data, pred_by_id=pred_ok, citations="off", entailment_check=False)
+    assert res.instr_override_rate is None
+    assert res.instr_conflict_present_rate == 0.0
+    assert res.instr_conflict_present_count == 0
     assert res.state_integrity_rate == 1.0

@@ -773,7 +773,7 @@ The goal is to identify where accuracy drops, measure it with a specific metric,
 | Order bias | gold order sweeps | spread in `selection_rate` across orders | deterministic selector; shuffle training; tie-break |
 | Extraction drift | answerer instability | `answer_acc_given_gold_selected` < 1 or low substring rate | deterministic answerer + copy-clamp; inspect parsing rules |
 | Missing gold | gold dropped from candidates | low accuracy with `abstain_rate` near 0 | enable `abstain_on_missing` and calibrate drop sweep |
-| Instruction override | instruction distractor profile | elevated `instr_override_rate` (conflicting only) / low `state_integrity_rate` / low `instr_conflict_present_rate` / `instr_gap` | citations + authority gate; treat instructions as non-authoritative |
+| Instruction override | instruction distractor profile | elevated `instr_override_rate` / `instr_gap` | citations + authority gate; treat instructions as non-authoritative |
 
 Stitching patterns (composable fixes):
 
@@ -871,13 +871,6 @@ First milestone (highest leverage):
 If this lands, you get the same decomposition you already use for text logs, but applied to real UI actions:
 retrieval vs selection vs abstain, with a concrete, publishable wall.
 
-Staged plan (planner baseline; future work):
-
-- Stage 1: sequence-level scoring over `task_id` (task_pass_rate, task_wrong_action_rate, task_post_action_verify_mean, task_abstain_rate_mean, task_len_mean).
-- Stage 2: define "virtual power" as potential-based shaping (delta_phi) over verifiable setup states (app_path, modal_scope, required tabs/filters).
-- Stage 3: add an optional search baseline (constructive heuristic -> simulated annealing) with seeded, time-budgeted runs; inspired by Sakana's AHC-style writeup.
-- North stars: MiniWoB++ and WebArena for reproducible UI task benchmarks (not integrated here).
-
 Adoption hook (CI gates):
 
 - `selection_rate` floor under `same_label`.
@@ -900,8 +893,6 @@ Minimal UI candidate schema (example):
 ```json
 {
   "id": "step_0007",
-  "task_id": "task_ui_same_label_a",
-  "step_index": 7,
   "candidates": [
     {
       "candidate_id": "btn_save_primary",
@@ -917,15 +908,9 @@ Minimal UI candidate schema (example):
   ],
   "gold": {
     "candidate_id": "btn_save_primary"
-  },
-  "expected_delta": {
-    "toast": "Profile saved"
   }
 }
 ```
-
-Optional fields: `task_id` groups steps into a sequence (for sequence_metrics); `step_index` provides order within a task.
-`ui-score`, `score_ui_fixture.py`, and `run_ui_adapter_stub.py` now emit `sequence_metrics` alongside row metrics.
 
 Stub assets (UI fixtures):
 
@@ -943,7 +928,6 @@ Run the stub script (validates paths, no adapter yet):
 ```
 
 This writes `runs/ui_same_label_gate.json` and `runs/ui_same_label_summary.json` (used by the threshold checks).
-Sequence metrics are task-scoped; the stub fixtures include two task IDs to exercise grouping.
 
 Popup/overlay stub:
 
@@ -1059,7 +1043,7 @@ These are concrete, world-facing uses and the minimum checks that keep them safe
 | Policy vs commentary pipelines (support/medical notes) | NOTE lines must not mutate state | `kv_commentary` with authority filter ON; `selected_note_rate` ~ 0 |
 | Retrieval-heavy RAG | evidence may be missing or buried | `gold_present_rate` from dense/lexical baselines; raise `k` or swap retriever |
 | High-risk decisions (compliance, approvals) | unsafe to guess when evidence missing | drop sweep + `abstain_precision/recall`; require citations |
-| Instruction injection exposure | prompts embedded in logs override truth | `instruction` profile; track `state_integrity_rate`, `instr_override_rate` (conflicting only), `instr_conflict_present_rate`, and `instr_gap` |
+| Instruction injection exposure | prompts embedded in logs override truth | `instruction` profile; track `instr_override_rate` and `instr_gap` |
 | Architecture eval (PaTH/RoPE-style) | test if state tracking improves under long context | `PaTH-style` steps curve + `same_key` selection wall |
 
 Recommended presets (quick checks; replace `ModelPath` as needed):
@@ -1122,7 +1106,7 @@ foreach ($drop in 0.0,0.3) {
 }
 ```
 
-Threshold check (after running the presets above and `scripts/run_instruction_override_gate.ps1` + the UI stubs):
+Threshold check (after running the presets above and `scripts/run_ui_same_label_stub.ps1` / `scripts/run_ui_popup_overlay_stub.ps1`):
 
 ```powershell
 python .\scripts\check_thresholds.py --config .\configs\usecase_checks.json
@@ -1139,14 +1123,6 @@ UI release checklist (UI stubs + wall sweep, optional config update):
 ```powershell
 .\scripts\run_ui_release_check.ps1 -UpdateConfig
 ```
-
-Instruction override gate (deterministic answer + copy-clamp; updates `runs/release_gates`):
-
-```powershell
-.\scripts\run_instruction_override_gate.ps1 -ModelPath "C:\AI\models\your-model.gguf"
-```
-
-This gate uses `instruction_suite` with a larger sample (seeds=4, queries=16) so conflicting instruction values are present (tracked by `instr_conflict_present_rate` and `instr_conflict_present_count`).
 
 The config is intentionally small and uses `warn` vs `error` severity so you can tighten ceilings after you locate the drop-off wall for your regime.
 
@@ -1763,7 +1739,7 @@ These are the CLI defaults (picked to create long-ish documents with frequent di
 
 - `episodes=20`, `steps=220`, `keys=14`, `queries=12`, `derived_query_rate=0.35`, `chapters=8`, `twins=true`
 - `distractor_rate=0.50`, `clear_rate=0.08`, `note_rate=0.12` (kv_commentary only)
-- `distractor_profile=instruction` (adds spec-violating instructions); `instruction_suite` adds quoted/format/update-like variants; `adversarial` adds stale-echo distractors; `note_camouflage` makes NOTE lines look like updates (suite adds quoted-update variants); `update_burst` injects rapid same-key UPDATE bursts with near-miss values
+- `distractor_profile=instruction` (adds spec-violating instructions); `instruction_suite` adds quoted/format variants; `adversarial` adds stale-echo distractors; `note_camouflage` makes NOTE lines look like updates (suite adds quoted-update variants); `update_burst` injects rapid same-key UPDATE bursts with near-miss values
 - `state_mode=kv` (switch to `kv_commentary`, `counter`, `set`, or `relational`)
 - `require_citations=true` (questions ask for JSON `{value, support_ids}` with max 3)
 - Closed-book is the headline score (`goldevidencebench run` defaults to `--protocol closed_book`; open-book is diagnostic)
@@ -1837,9 +1813,7 @@ Metrics:
 - `twin_consistency`: counterfactual twin agreement/disagreement rate (anti-shortcut)
 - `twin_flip_rate`: twin pairs where the answer flips when the decisive UPDATE flips (higher is better)
 - `instr_acc` / `instr_gap`: accuracy on questions with instruction-injection distractors, and the drop vs. clean questions
-- `instr_override_rate`: fraction of instruction-tagged questions that follow *conflicting* injected instructions (only counted when `instruction_value` != gold; lower is better)
-- `instr_conflict_present_rate`: fraction of instruction-tagged questions where `instruction_value` conflicts with gold (diagnostic for suite drift)
-- `instr_conflict_present_count`: number of instruction-tagged questions with conflicts (diagnostic sample-size guard)
+- `instr_override_rate`: fraction of instruction-tagged questions that follow injected instructions (lower is better)
 - `state_integrity_rate`: fraction of instruction-tagged questions that still answer from the latest true state (higher is better)
 - Efficiency curve (printed by `goldevidencebench run`): tokens read, tokens/query, passes over doc, wall-clock seconds (`wall_s`) and per-query (`wall_s_per_q`). Llama-cpp runs also record `prefill_s`/`decode_s` and per-query variants when the low-level perf API is available.
 

@@ -70,6 +70,8 @@ def _flatten(row: dict[str, Any]) -> dict[str, Any]:
         "instruction_acc",
         "instruction_gap",
         "instr_override_rate",
+        "instr_conflict_present_rate",
+        "instr_conflict_present_count",
         "state_integrity_rate",
     ):
         if key in metrics:
@@ -88,6 +90,8 @@ def _flatten(row: dict[str, Any]) -> dict[str, Any]:
         "instruction_acc",
         "instruction_gap",
         "instr_override_rate",
+        "instr_conflict_present_rate",
+        "instr_conflict_present_count",
         "state_integrity_rate",
     ):
         if key in metrics_raw:
@@ -470,14 +474,32 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     for row in rows:
         metrics = row.get("metrics", {})
         key = (row.get("state_mode") or "", row.get("distractor_profile") or "")
-        for metric_key in ("value_acc", "exact_acc", "cite_f1", "entailment", "instr_override_rate", "state_integrity_rate"):
+        for metric_key in (
+            "value_acc",
+            "exact_acc",
+            "cite_f1",
+            "entailment",
+            "instr_override_rate",
+            "instr_conflict_present_rate",
+            "instr_conflict_present_count",
+            "state_integrity_rate",
+        ):
             value = metrics.get(metric_key)
             if value is None:
                 continue
             grouped[key][metric_key].append(float(value))
             overall[metric_key].append(float(value))
         metrics_raw = row.get("metrics_raw") or {}
-        for metric_key in ("value_acc", "exact_acc", "cite_f1", "entailment", "instr_override_rate", "state_integrity_rate"):
+        for metric_key in (
+            "value_acc",
+            "exact_acc",
+            "cite_f1",
+            "entailment",
+            "instr_override_rate",
+            "instr_conflict_present_rate",
+            "instr_conflict_present_count",
+            "state_integrity_rate",
+        ):
             value = metrics_raw.get(metric_key)
             if value is None:
                 continue

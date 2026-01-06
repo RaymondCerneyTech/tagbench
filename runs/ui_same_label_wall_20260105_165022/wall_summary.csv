@@ -1,0 +1,6 @@
+run,duplicates,steps,seed,labels,adapter,selection_mode,selection_seed,selection_rate,wrong_action_rate,post_action_verify_rate,avg_candidates_per_row,avg_max_label_duplicates_per_row
+dups1,1,,,,,,,1.0,0.0,,1.0,1.0
+dups2,2,,,,,,,0.0,1.0,,2.0,2.0
+dups3,3,,,,,,,0.0,1.0,,3.0,3.0
+dups4,4,,,,,,,0.0,1.0,,4.0,4.0
+dups5,5,,,,,,,0.0,1.0,,5.0,5.0

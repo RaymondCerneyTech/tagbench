@@ -142,7 +142,13 @@ def format_issues(issues: list[Issue]) -> str:
         return "No checks configured."
     lines = []
     for issue in issues:
+        if issue.status in {"fail", "missing"}:
+            prefix = f"FAIL({issue.severity})" if issue.status == "fail" else f"MISSING({issue.severity})"
+        elif issue.status == "skipped":
+            prefix = "SKIP"
+        else:
+            prefix = "PASS"
         lines.append(
-            f"[{issue.severity}] {issue.check_id} {issue.metric_path} {issue.status} - {issue.message}"
+            f"[{prefix}] {issue.check_id} {issue.metric_path} - {issue.message}"
         )
     return "\n".join(lines)

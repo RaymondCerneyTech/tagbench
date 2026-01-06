@@ -23,6 +23,10 @@ def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def validate_ui_rows(rows: Iterable[dict[str, Any]]) -> list[str]:
     errors: list[str] = []
     rows_list = list(rows)
@@ -43,6 +47,17 @@ def validate_ui_rows(rows: Iterable[dict[str, Any]]) -> list[str]:
         step_id = row.get("id")
         if not isinstance(step_id, str) or not step_id.strip():
             errors.append(f"row {row_index}: id must be a non-empty string")
+
+        task_id = row.get("task_id")
+        if task_id is not None and (not isinstance(task_id, str) or not task_id.strip()):
+            errors.append(f"row {row_index}: task_id must be a non-empty string when present")
+
+        step_index = row.get("step_index")
+        if step_index is not None:
+            if not _is_int(step_index) or step_index < 1:
+                errors.append(
+                    f"row {row_index}: step_index must be a positive integer when present"
+                )
 
         candidates = row.get("candidates")
         if not isinstance(candidates, list) or not candidates:

@@ -6,7 +6,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from goldevidencebench.ui_eval import score_post_action_verification, score_ui_rows
+from goldevidencebench.ui_eval import (
+    score_post_action_verification,
+    score_ui_rows,
+    score_ui_sequences,
+)
 from goldevidencebench.ui_fixture import validate_ui_fixture_path
 from goldevidencebench.util import read_jsonl
 
@@ -76,6 +80,7 @@ def main() -> int:
         selected_ids.append(pred.get("value"))
 
     metrics = score_ui_rows(rows, selected_ids)
+    observed_deltas = None
     if args.observed:
         observed_path = Path(args.observed)
         if not observed_path.exists():
@@ -83,8 +88,14 @@ def main() -> int:
             return 1
         observed_deltas = _load_observed_deltas(observed_path, rows)
         metrics.update(score_post_action_verification(rows, observed_deltas))
+    sequence_metrics = score_ui_sequences(rows, selected_ids, observed_deltas)
 
-    payload = {"rows": len(rows), "adapter": args.adapter, "metrics": metrics}
+    payload = {
+        "rows": len(rows),
+        "adapter": args.adapter,
+        "metrics": metrics,
+        "sequence_metrics": sequence_metrics,
+    }
     if args.out:
         Path(args.out).write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps(payload, indent=2))

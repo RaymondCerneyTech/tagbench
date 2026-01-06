@@ -1,6 +1,6 @@
 param(
-    [string]$FixturePath = "data\\ui_same_label_fixture.jsonl",
-    [string]$ConfigPath = "configs\\ui_same_label.json"
+    [string]$FixturePath = "data\\ui_popup_overlay_fixture.jsonl",
+    [string]$ConfigPath = "configs\\ui_popup_overlay.json"
 )
 
 if (-not (Test-Path $ConfigPath)) {
@@ -15,10 +15,11 @@ if (-not (Test-Path $FixturePath)) {
 
 $lineCount = (Get-Content $FixturePath).Count
 $runsDir = "runs"
-$gateOut = Join-Path $runsDir "ui_same_label_gate.json"
-$summaryOut = Join-Path $runsDir "ui_same_label_summary.json"
+$gateOut = Join-Path $runsDir "ui_popup_overlay_gate.json"
+$summaryOut = Join-Path $runsDir "ui_popup_overlay_summary.json"
 New-Item -ItemType Directory -Path $runsDir -Force | Out-Null
-Write-Host "UI same_label stub"
+
+Write-Host "UI popup_overlay stub"
 Write-Host "Config: $ConfigPath"
 Write-Host "Fixture: $FixturePath ($lineCount steps)"
 python .\scripts\validate_ui_fixture.py --fixture $FixturePath
@@ -30,7 +31,7 @@ python .\scripts\score_ui_fixture.py --fixture $FixturePath --mode first
 python .\scripts\run_ui_adapter_stub.py --fixture $FixturePath
 $env:GOLDEVIDENCEBENCH_UI_SELECTION_MODE = "gold"
 $env:GOLDEVIDENCEBENCH_UI_SELECTION_SEED = "0"
-python .\scripts\run_ui_adapter_stub.py --fixture $FixturePath --observed .\data\ui_same_label_observed_ok.jsonl --out $gateOut
+python .\scripts\run_ui_adapter_stub.py --fixture $FixturePath --observed .\data\ui_popup_overlay_observed_ok.jsonl --out $gateOut
 Remove-Item Env:\GOLDEVIDENCEBENCH_UI_SELECTION_MODE -ErrorAction SilentlyContinue
 Remove-Item Env:\GOLDEVIDENCEBENCH_UI_SELECTION_SEED -ErrorAction SilentlyContinue
 python .\scripts\summarize_ui_fixture.py --fixture $FixturePath --out $summaryOut
